@@ -103,3 +103,11 @@ Run from the project root:
 ```
 
 Tests launch and stop their own server on a temporary local port. They cover CRUD, partial updates, validation, missing IDs, generated metadata, and OpenAPI registration.
+
+## Local security limits
+
+Request bodies are limited to 16 KiB, including chunked requests. The temporary store holds at most 1,000 reports and returns 503 when full. Lists return up to 100 reports; use `/items?limit=20&offset=20` for subsequent pages. Validation responses omit submitted values.
+
+Hostnames are restricted to `localhost` and `127.0.0.1`. Browser writes accept only origins `http://localhost:8000` and `http://127.0.0.1:8000`; scripts without an Origin header still work. Keep the server on loopback. These protections do not replace authentication or ownership checks.
+
+See [SECURITY.md](SECURITY.md) for fixed findings, remaining threats, and verification evidence.

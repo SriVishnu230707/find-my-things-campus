@@ -2,18 +2,26 @@
 
 from datetime import datetime, timezone
 from threading import Lock
+from itertools import islice
 
 from app.schemas.items import ItemCreate, ItemRead, ItemUpdate
 
 
+class StoreFullError(Exception):
+    """The temporary store has reached its report limit."""
+
+
 class ItemStore:
-    def __init__(self) -> None:
+    def __init__(self, capacity: int = 1000) -> None:
         self._items: dict[int, ItemRead] = {}
         self._next_id = 1
         self._lock = Lock()
+        self._capacity = capacity
 
     def create(self, data: ItemCreate) -> ItemRead:
         with self._lock:
+            if len(self._items) >= self._capacity:
+                raise StoreFullError("Temporary report capacity reached")
             now = datetime.now(timezone.utc)
             item = ItemRead(**data.model_dump(), id=self._next_id,
                             status="open", created_at=now, updated_at=now)
@@ -21,9 +29,10 @@ class ItemStore:
             self._next_id += 1
             return item.model_copy(deep=True)
 
-    def list(self) -> list[ItemRead]:
+    def list(self, limit: int = 100, offset: int = 0) -> list[ItemRead]:
         with self._lock:
-            return [item.model_copy(deep=True) for item in self._items.values()]
+            return [item.model_copy(deep=True) for item in
+                    islice(self._items.values(), offset, offset + limit)]
 
     def get(self, item_id: int) -> ItemRead | None:
         with self._lock:

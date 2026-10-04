@@ -2,10 +2,10 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response, status
 
 from app.schemas.items import ItemCreate, ItemRead, ItemUpdate
-from app.services.items import ItemStore
+from app.services.items import ItemStore, StoreFullError
 
 router = APIRouter(prefix="/items", tags=["Reports"])
 ItemID = Annotated[int, Path(gt=0)]
@@ -20,14 +20,18 @@ Store = Annotated[ItemStore, Depends(get_store)]
 
 @router.post("", response_model=ItemRead, status_code=status.HTTP_201_CREATED)
 def create_item(data: ItemCreate, store: Store, response: Response) -> ItemRead:
-    item = store.create(data)
+    try:
+        item = store.create(data)
+    except StoreFullError:
+        raise HTTPException(status_code=503, detail="Temporary report capacity reached") from None
     response.headers["Location"] = f"/items/{item.id}"
     return item
 
 
 @router.get("", response_model=list[ItemRead])
-def list_items(store: Store) -> list[ItemRead]:
-    return store.list()
+def list_items(store: Store, limit: Annotated[int, Query(ge=1, le=100)] = 100,
+               offset: Annotated[int, Query(ge=0)] = 0) -> list[ItemRead]:
+    return store.list(limit, offset)
 
 
 @router.get("/{item_id}", response_model=ItemRead)

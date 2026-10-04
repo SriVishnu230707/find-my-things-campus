@@ -1,6 +1,7 @@
 """HTTP integration checks using only Python's standard library."""
 
 import json
+import http.client
 from pathlib import Path
 import socket
 import subprocess
@@ -115,6 +116,52 @@ class ReportAPI(unittest.TestCase):
         schema = self.request("GET", "/openapi.json")[1]
         self.assertEqual(set(schema["paths"]["/items"]), {"post", "get"})
         self.assertEqual(set(schema["paths"]["/items/{item_id}"]), {"get", "patch", "delete"})
+
+    def raw_request(self, method, path, body=None, headers=None, chunked=False):
+        connection = http.client.HTTPConnection(self.base.removeprefix("http://"), timeout=3)
+        try:
+            connection.request(method, path, body=body, headers=headers or {}, encode_chunked=chunked)
+            response = connection.getresponse()
+            return response.status, response.read(), dict(response.getheaders())
+        finally:
+            connection.close()
+
+    def test_body_limits_including_chunked(self):
+        for chunked in [False, True]:
+            body = b"x" * 17000
+            if chunked:
+                body = iter([body[:9000], body[9000:]])
+            code, _, _ = self.raw_request("POST", "/items", body,
+                                         {"Content-Type": "application/json"}, chunked)
+            self.assertEqual(code, 413)
+        self.assertEqual(self.request("GET", "/items")[1], [])
+
+    def test_browser_origin_and_host_guards(self):
+        for origin in ["https://evil.example", "null"]:
+            code, _, _ = self.raw_request("POST", "/items", json.dumps(REPORT),
+                    {"Origin": origin, "Content-Type": "application/json"})
+            self.assertEqual(code, 403)
+        self.assertEqual(self.raw_request("GET", "/health", headers={"Host": "evil.example"})[0], 400)
+        self.assertEqual(self.request("GET", "/items")[1], [])
+        code, _, _ = self.raw_request("POST", "/items", json.dumps(REPORT),
+                    {"Origin": "http://127.0.0.1:8000", "Content-Type": "application/json"})
+        self.assertEqual(code, 201)
+
+    def test_bounded_listing(self):
+        ids = [self.request("POST", "/items", REPORT)[1]["id"] for _ in range(3)]
+        page = self.request("GET", "/items?limit=1&offset=1")[1]
+        self.assertEqual([item["id"] for item in page], [ids[1]])
+        self.assertEqual(self.request("GET", "/items?offset=99999")[1], [])
+        for query in ["limit=101", "limit=0", "offset=-1"]:
+            self.assertEqual(self.request("GET", "/items?" + query)[0], 422)
+
+    def test_safe_validation_errors_and_headers(self):
+        code, body, headers = self.request("POST", "/items", {"private": "sensitive-test-value"})
+        self.assertEqual(code, 422)
+        self.assertNotIn("sensitive-test-value", json.dumps(body))
+        self.assertTrue(all("input" not in issue and "ctx" not in issue for issue in body["detail"]))
+        self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
+        self.assertEqual(headers["Cache-Control"], "no-store")
 
 
 if __name__ == "__main__":
