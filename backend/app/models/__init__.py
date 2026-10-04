@@ -1,1 +1,1 @@
-"""Database models will be introduced in Phase 3."""
+"""SQLAlchemy database models."""

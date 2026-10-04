@@ -1,6 +1,6 @@
 # Campus Lost-and-Found API
 
-Phase 2 adds validated lost-and-found report CRUD to the FastAPI foundation.
+Phase 3 stores lost-and-found reports persistently with SQLite, SQLAlchemy, and Alembic.
 
 ## Requirements
 
@@ -13,6 +13,7 @@ Run these commands from the project root:
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e .\backend
+.\.venv\Scripts\python.exe -m alembic -c backend/alembic.ini upgrade head
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir backend --reload --host 127.0.0.1 --port 8000
 ```
 
@@ -53,13 +54,16 @@ backend/
     main.py          Application configuration and router registration
     routers/         HTTP endpoints
     schemas/         Pydantic validation and response contracts
-    models/          Reserved for database models in Phase 3
-    services/        Reserved for report business logic
+    database.py      Connection configuration and request sessions
+    models/          SQLAlchemy report table
+    services/        Transactional report operations
+  migrations/        Alembic schema revisions
+  alembic.ini        Migration configuration
   tests/             HTTP integration tests
   pyproject.toml     Package metadata and pinned direct dependencies
 ```
 
-Dependencies: FastAPI 0.142.2, Pydantic 2.13.5, Uvicorn 0.53.0. The application version, `0.2.0`, is separate from dependency versions. FastAPI installs a compatible Starlette dependency automatically.
+Dependencies: FastAPI 0.142.2, Pydantic 2.13.5, Uvicorn 0.53.0, SQLAlchemy 2.1.2, Alembic 1.20.0. Application version: `0.3.0`.
 
 ## Report API
 
@@ -92,7 +96,24 @@ The server assigns IDs, UTC timestamps, and initial status `open`. Categories ar
 
 Text is trimmed. Titles require 3–120 characters, descriptions 10–2000, locations 2–150, and reporter names 2–100. Unknown fields are rejected. PATCH accepts only supplied fields, requires at least one change, and rejects explicit null values. IDs and timestamps cannot be edited. Invalid input returns 422; absent reports return 404.
 
-Storage is process-local and resets on restart or code reload. Use one server worker. There is no authentication yet: `reported_by` is an unverified display name, and any client can edit or delete reports. Persistence and permissions arrive in later phases. The health endpoint checks API liveness only.
+Reports are stored in `backend/data/campus.db` by default, regardless of the directory from which you start the application. Reports survive restarts and code reloads. The database and SQLite sidecar files are excluded from Git. Phase 2 memory reports are not automatically imported.
+
+There is no authentication yet: `reported_by` is an unverified display name, and any client can edit or delete reports. The health endpoint checks API liveness only. Database failures return a generic 503 without SQL or submitted values.
+
+## Database configuration and migrations
+
+To choose a different SQLite file, set an absolute URL before both migration and server commands:
+
+```powershell
+$env:DATABASE_URL = 'sqlite:///C:/projects/find my things/backend/data/custom.db'
+.\.venv\Scripts\python.exe -m alembic -c backend/alembic.ini upgrade head
+```
+
+Migrations are explicit: startup refuses an unmigrated database rather than silently creating tables. Re-running `upgrade head` is safe. To add future schema changes, edit the models, generate a revision with `alembic -c backend/alembic.ini revision --autogenerate -m "Describe change"`, inspect the generated migration, then upgrade. Use the virtual environment's Python with `-m alembic` as above.
+
+SQLite serializes writes and waits up to five seconds on a busy database. Partial updates issue a single SQL UPDATE for supplied fields; concurrent edits to the same field still use last-write-wins. Use one worker for local development. PostgreSQL will require its own driver and verification in the deployment phase.
+
+For a simple local backup, stop the server before copying `campus.db` to a safe location. Do not commit reports or database credentials. `downgrade base` drops the reports table and its data; use it only on disposable databases.
 
 ## Verification
 
@@ -102,11 +123,11 @@ Run from the project root:
 .\.venv\Scripts\python.exe -m unittest discover -s backend/tests -v
 ```
 
-Tests launch and stop their own server on a temporary local port. They cover CRUD, partial updates, validation, missing IDs, generated metadata, and OpenAPI registration.
+Tests migrate isolated temporary databases and launch their own servers. They cover CRUD, persistence across real process restarts, deletion persistence, rollback, constraints, concurrency, migration roundtrips, metadata consistency, and the existing request protections. They never use your development database.
 
 ## Local security limits
 
-Request bodies are limited to 16 KiB, including chunked requests. The temporary store holds at most 1,000 reports and returns 503 when full. Lists return up to 100 reports; use `/items?limit=20&offset=20` for subsequent pages. Validation responses omit submitted values.
+Request bodies are limited to 16 KiB, including chunked requests. Lists return up to 100 reports; use `/items?limit=20&offset=20` for subsequent pages. Validation responses omit submitted values. The old 1,000-report memory cap is removed; disk growth and write flooding still require operational limits before deployment.
 
 Hostnames are restricted to `localhost` and `127.0.0.1`. Browser writes accept only origins `http://localhost:8000` and `http://127.0.0.1:8000`; scripts without an Origin header still work. Keep the server on loopback. These protections do not replace authentication or ownership checks.
 

@@ -46,6 +46,7 @@ class ItemUpdate(InputModel):
 
 
 class ItemRead(ItemCreate):
+    model_config = ConfigDict(from_attributes=True, str_strip_whitespace=True, extra="forbid")
     id: int
     status: ReportStatus
     created_at: datetime

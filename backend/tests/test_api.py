@@ -2,6 +2,9 @@
 
 import json
 import http.client
+import os
+import tempfile
+from contextlib import closing
 from pathlib import Path
 import socket
 import subprocess
@@ -20,16 +23,31 @@ REPORT = dict(title="Laptop Charger", description="Black Dell 65W charger",
 class ReportAPI(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        cls.directory = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.directory.cleanup)
+        cls.environment = {**os.environ, "DATABASE_URL": "sqlite:///" +
+                           (Path(cls.directory.name) / "test.db").as_posix(),
+                           "PYTHONPATH": os.pathsep.join(sys.path)}
+        subprocess.run([sys.executable, "-m", "alembic", "-c", str(BACKEND / "alembic.ini"),
+                        "upgrade", "head"], env=cls.environment, check=True,
+                       stdout=subprocess.DEVNULL)
         with socket.socket() as sock:
             sock.bind(("127.0.0.1", 0))
             port = sock.getsockname()[1]
         cls.base = f"http://127.0.0.1:{port}"
+        cls.port = port
+        cls.start_server()
+        cls.addClassCleanup(cls.stop_server)
+
+    @classmethod
+    def start_server(cls):
         cls.server = subprocess.Popen(
-            [sys.executable, "-m", "uvicorn", "app.main:app", "--app-dir",
-             str(BACKEND), "--port", str(port)],
+            # Run the interpreter directly, avoiding the Windows venv launcher
+            # child process so terminate/wait truly stops the database server.
+            [getattr(sys, "_base_executable", sys.executable), "-m", "uvicorn", "app.main:app", "--app-dir",
+             str(BACKEND), "--port", str(cls.port)], env=cls.environment,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
-        cls.addClassCleanup(cls.stop_server)
         for _ in range(100):
             try:
                 if cls.request("GET", "/health")[0] == 200:
@@ -108,7 +126,7 @@ class ReportAPI(unittest.TestCase):
         for method, body in [("GET", None), ("PATCH", {"status": "resolved"}),
                              ("DELETE", None)]:
             self.assertEqual(self.request(method, "/items/999999", body)[0], 404)
-            for value in ["abc", "0", "-1"]:
+            for value in ["abc", "0", "-1", str(2**63)]:
                 self.assertEqual(self.request(method, f"/items/{value}", body)[0], 422)
 
     def test_health_and_documentation(self):
@@ -152,7 +170,7 @@ class ReportAPI(unittest.TestCase):
         page = self.request("GET", "/items?limit=1&offset=1")[1]
         self.assertEqual([item["id"] for item in page], [ids[1]])
         self.assertEqual(self.request("GET", "/items?offset=99999")[1], [])
-        for query in ["limit=101", "limit=0", "offset=-1"]:
+        for query in ["limit=101", "limit=0", "offset=-1", f"offset={2**63}"]:
             self.assertEqual(self.request("GET", "/items?" + query)[0], 422)
 
     def test_safe_validation_errors_and_headers(self):
@@ -162,6 +180,34 @@ class ReportAPI(unittest.TestCase):
         self.assertTrue(all("input" not in issue and "ctx" not in issue for issue in body["detail"]))
         self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
         self.assertEqual(headers["Cache-Control"], "no-store")
+
+    def test_persistence_across_restart(self):
+        item = self.request("POST", "/items", REPORT)[1]
+        path = f"/items/{item['id']}"
+        updated = self.request("PATCH", path, {"status": "resolved"})[1]
+        self.stop_server()
+        self.start_server()
+        self.assertEqual(self.request("GET", path)[1], updated)
+        self.request("DELETE", path)
+        self.stop_server()
+        self.start_server()
+        self.assertEqual(self.request("GET", path)[0], 404)
+
+    def test_database_error_is_redacted_and_recovers(self):
+        import sqlite3
+        database = Path(self.directory.name) / "test.db"
+        with closing(sqlite3.connect(database)) as connection:
+            with connection:
+                connection.execute("ALTER TABLE items RENAME TO unavailable_items")
+        try:
+            code, body, _ = self.request("POST", "/items", REPORT)
+            self.assertEqual(code, 503)
+            self.assertEqual(body, {"detail": "Database temporarily unavailable"})
+        finally:
+            with closing(sqlite3.connect(database)) as connection:
+                with connection:
+                    connection.execute("ALTER TABLE unavailable_items RENAME TO items")
+        self.assertEqual(self.request("POST", "/items", REPORT)[0], 201)
 
 
 if __name__ == "__main__":

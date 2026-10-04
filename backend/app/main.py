@@ -10,18 +10,41 @@ from app.middleware import RequestGuards
 
 from app.routers.health import router as health_router
 from app.routers.items import router as items_router
-from app.services.items import ItemStore
+from contextlib import asynccontextmanager
+import logging
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+from app.database import engine
+
+@asynccontextmanager
+async def lifespan(app):
+    try:
+        with engine.connect() as connection:
+            revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
+            if revision != "0001":
+                raise RuntimeError("Database migration required; run alembic upgrade head")
+    except SQLAlchemyError:
+        raise RuntimeError("Database unavailable or not migrated; run alembic upgrade head") from None
+    try:
+        yield
+    finally:
+        engine.dispose()
 
 app = FastAPI(
     title="Campus Lost-and-Found API",
-    description="Report lost and found items. Phase 2 uses temporary in-memory storage.",
-    version="0.2.0",
+    description="Report lost and found items. Phase 3 stores reports persistently in SQLite.",
+    version="0.3.0",
+    lifespan=lifespan,
 )
-app.state.item_store = ItemStore()
 app.add_middleware(RequestGuards)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1"])
 app.include_router(health_router)
 app.include_router(items_router)
+
+@app.exception_handler(SQLAlchemyError)
+async def database_error(request, error):
+    logging.getLogger(__name__).error("Database operation failed (%s)", type(error).__name__)
+    return JSONResponse(status_code=503, content={"detail": "Database temporarily unavailable"})
 
 
 @app.exception_handler(RequestValidationError)

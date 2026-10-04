@@ -4,13 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "campus-lost-and-found-api"
-version = "0.2.0"
-description = "Campus Lost-and-Found API — Phase 2 report CRUD"
+version = "0.3.0"
+description = "Campus Lost-and-Found API — Phase 3 persistent reports"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi==0.142.2",
     "pydantic==2.13.5",
     "uvicorn==0.53.0",
+    "sqlalchemy==2.1.2",
+    "alembic==1.20.0",
 ]
 
 [tool.setuptools.packages.find]

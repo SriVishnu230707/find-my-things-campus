@@ -1,1 +1,1 @@
-"""Business logic will be introduced alongside report operations."""
+"""Report persistence and business operations."""
