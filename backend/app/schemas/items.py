@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 Title = Annotated[str, Field(min_length=3, max_length=120)]
 Description = Annotated[str, Field(min_length=10, max_length=2000)]
@@ -16,6 +16,14 @@ ReportStatus = Literal["open", "resolved"]
 
 class InputModel(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def safe_text(cls, value):
+        if isinstance(value, str) and ("\x00" in value or
+                any(0xD800 <= ord(char) <= 0xDFFF for char in value)):
+            raise ValueError("Text contains an invalid Unicode or NUL character")
+        return value
 
 
 class ItemCreate(InputModel):

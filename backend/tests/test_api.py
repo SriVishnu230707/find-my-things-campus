@@ -111,6 +111,17 @@ class ReportAPI(unittest.TestCase):
                 self.assertEqual(self.request("POST", "/items", body)[0], 422)
         self.assertEqual(self.request("GET", "/items")[1], [])
 
+    def test_invalid_unicode_and_nul_are_rejected(self):
+        for title in ["Charger\ud800", "Black\x00wallet"]:
+            with self.subTest(title=repr(title)):
+                self.assertEqual(self.request("POST", "/items", {**REPORT, "title": title})[0], 422)
+
+    def test_deep_json_is_rejected_without_crashing(self):
+        code, _, _ = self.raw_request("POST", "/items", "[" * 1200 + "0" + "]" * 1200,
+                                     {"Content-Type": "application/json"})
+        self.assertEqual(code, 422)
+        self.assertEqual(self.request("GET", "/health")[0], 200)
+
     def test_patch_validation_and_preservation(self):
         item = self.request("POST", "/items", REPORT)[1]
         path = f"/items/{item['id']}"
@@ -180,6 +191,14 @@ class ReportAPI(unittest.TestCase):
         self.assertTrue(all("input" not in issue and "ctx" not in issue for issue in body["detail"]))
         self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
         self.assertEqual(headers["Cache-Control"], "no-store")
+        for method, path, body, extra in [
+            ("POST", "/items", "x" * 17000, {}),
+            ("POST", "/items", "{}", {"Origin": "https://evil.example"}),
+            ("GET", "/health", None, {"Host": "evil.example"}),
+        ]:
+            _, _, denied_headers = self.raw_request(method, path, body, extra)
+            self.assertEqual(denied_headers["x-content-type-options"], "nosniff")
+            self.assertEqual(denied_headers["cache-control"], "no-store")
 
     def test_persistence_across_restart(self):
         item = self.request("POST", "/items", REPORT)[1]

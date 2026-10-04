@@ -12,20 +12,16 @@ from app.routers.health import router as health_router
 from app.routers.items import router as items_router
 from contextlib import asynccontextmanager
 import logging
-from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
-from app.database import engine
+from app.database import engine, verify_database
 
 @asynccontextmanager
 async def lifespan(app):
     try:
-        with engine.connect() as connection:
-            revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
-            if revision != "0001":
-                raise RuntimeError("Database migration required; run alembic upgrade head")
-    except SQLAlchemyError:
-        raise RuntimeError("Database unavailable or not migrated; run alembic upgrade head") from None
-    try:
+        try:
+            verify_database(engine)
+        except SQLAlchemyError:
+            raise RuntimeError("Database unavailable or not migrated; run alembic upgrade head") from None
         yield
     finally:
         engine.dispose()
@@ -36,8 +32,8 @@ app = FastAPI(
     version="0.3.0",
     lifespan=lifespan,
 )
-app.add_middleware(RequestGuards)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1"])
+app.add_middleware(RequestGuards)
 app.include_router(health_router)
 app.include_router(items_router)
 

@@ -1,4 +1,4 @@
-"""Limits for the local, unauthenticated Phase 2 prototype."""
+"""Limits for the local, unauthenticated prototype."""
 
 from starlette.responses import JSONResponse
 
@@ -14,6 +14,17 @@ class RequestGuards:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
+        original_send = send
+
+        async def guarded_send(message):
+            if message["type"] == "http.response.start":
+                message["headers"] = list(message.get("headers", [])) + [
+                    (b"x-content-type-options", b"nosniff"),
+                    (b"cache-control", b"no-store"),
+                ]
+            await original_send(message)
+
+        send = guarded_send
         headers = dict(scope["headers"])
         if scope["method"] in {"POST", "PATCH", "PUT", "DELETE"}:
             origin = headers.get(b"origin")
@@ -46,12 +57,4 @@ class RequestGuards:
                 return {"type": "http.request", "body": body, "more_body": False}
             return await receive()
 
-        async def guarded_send(message):
-            if message["type"] == "http.response.start":
-                message["headers"] = list(message.get("headers", [])) + [
-                    (b"x-content-type-options", b"nosniff"),
-                    (b"cache-control", b"no-store"),
-                ]
-            await send(message)
-
-        await self.app(scope, replay, guarded_send)
+        await self.app(scope, replay, send)

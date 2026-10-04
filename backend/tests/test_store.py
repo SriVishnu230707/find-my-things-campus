@@ -67,3 +67,17 @@ class DatabaseTests(unittest.TestCase):
         self.assertNotIn('items', inspect(self.engine).get_table_names())
         self.migrate('upgrade', 'head')
         self.assertIn('items', inspect(self.engine).get_table_names())
+
+    def test_startup_rejects_stale_revision_and_missing_table(self):
+        from app.database import verify_database
+        verify_database(self.engine)
+        with self.engine.begin() as connection:
+            connection.execute(text("UPDATE alembic_version SET version_num = 'unknown'"))
+        with self.assertRaises(RuntimeError):
+            verify_database(self.engine)
+        with self.engine.begin() as connection:
+            connection.execute(text("UPDATE alembic_version SET version_num = '0001'"))
+            connection.execute(text("DROP TABLE items"))
+        from sqlalchemy.exc import SQLAlchemyError
+        with self.assertRaises(SQLAlchemyError):
+            verify_database(self.engine)
