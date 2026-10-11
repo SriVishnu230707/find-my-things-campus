@@ -2,6 +2,7 @@
 from alembic import context
 from app.database import Base, engine
 from app.models.items import Item
+from app.models.users import User
 
 if context.is_offline_mode():
     context.configure(url=engine.url, target_metadata=Base.metadata,

@@ -1,6 +1,6 @@
 """Persistent report model and database-level constraints."""
 from datetime import datetime, timezone
-from sqlalchemy import CheckConstraint, DateTime, Integer, String, Index
+from sqlalchemy import CheckConstraint, DateTime, Integer, String, Index, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import TypeDecorator
 from app.database import Base
@@ -42,6 +42,8 @@ class Item(Base):
     location: Mapped[str] = mapped_column(String(150))
     type: Mapped[str] = mapped_column(String(10))
     reported_by: Mapped[str] = mapped_column(String(100))
+    reporter_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT", name="fk_items_reporter_id_users"), index=True)
     status: Mapped[str] = mapped_column(String(10))
     created_at: Mapped[datetime] = mapped_column(UTCDateTime())
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime())

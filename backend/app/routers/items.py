@@ -8,6 +8,7 @@ from app.schemas.items import ItemCreate, ItemRead, ItemUpdate, ItemQuery
 from sqlalchemy.orm import Session
 from app.database import get_session
 from app.services.items import ItemRepository
+from app.auth import CurrentUser
 
 router = APIRouter(prefix="/items", tags=["Reports"])
 ItemID = Annotated[int, Path(gt=0, le=2**63 - 1)]
@@ -21,8 +22,8 @@ Store = Annotated[ItemRepository, Depends(get_store)]
 
 
 @router.post("", response_model=ItemRead, status_code=status.HTTP_201_CREATED)
-def create_item(data: ItemCreate, store: Store, response: Response) -> ItemRead:
-    item = store.create(data)
+def create_item(data: ItemCreate, store: Store, response: Response, user: CurrentUser) -> ItemRead:
+    item = store.create(data, user)
     response.headers["Location"] = f"/items/{item.id}"
     return item
 
@@ -42,15 +43,25 @@ def get_item(item_id: ItemID, store: Store) -> ItemRead:
 
 
 @router.patch("/{item_id}", response_model=ItemRead)
-def update_item(item_id: ItemID, data: ItemUpdate, store: Store) -> ItemRead:
-    item = store.update(item_id, data)
+def update_item(item_id: ItemID, data: ItemUpdate, store: Store, user: CurrentUser) -> ItemRead:
+    check_permission(item_id, store, user)
+    item = store.update(item_id, data, user)
     if item is None:
         raise HTTPException(status_code=404, detail="Item not found")
     return item
 
 
 @router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_item(item_id: ItemID, store: Store) -> Response:
-    if not store.delete(item_id):
+def delete_item(item_id: ItemID, store: Store, user: CurrentUser) -> Response:
+    check_permission(item_id, store, user)
+    if not store.delete(item_id, user):
         raise HTTPException(status_code=404, detail="Item not found")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def check_permission(item_id, store, user):
+    item = store.get(item_id)
+    if item is None:
+        raise HTTPException(404, "Item not found")
+    if user.role != "staff" and item.reporter_id != user.id:
+        raise HTTPException(403, "You may only modify your own reports")

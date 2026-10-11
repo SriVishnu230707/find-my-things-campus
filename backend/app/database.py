@@ -35,6 +35,7 @@ engine = build_engine(database_url())
 def verify_database(db_engine):
     """Reject stale revisions and missing report columns before serving traffic."""
     from app.models.items import Item
+    from app.models.users import User
     from sqlalchemy import select
     config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
     expected = set(ScriptDirectory.from_config(config).get_heads())
@@ -43,6 +44,7 @@ def verify_database(db_engine):
         if actual != expected:
             raise RuntimeError("Database migration required; run alembic upgrade head")
         connection.execute(select(Item).limit(0))
+        connection.execute(select(User).limit(0))
 
 def get_session():
     with Session(engine, expire_on_commit=False) as session:

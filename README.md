@@ -1,6 +1,6 @@
 # Campus Lost-and-Found API
 
-Phase 4 adds keyword search, combined filters, and chronological sorting to persistent reports.
+Phase 5 adds student accounts, Argon2id password hashing, JWT login, report ownership, and staff moderation to the searchable persistent API.
 
 ## Requirements
 
@@ -14,7 +14,8 @@ Run these commands from the project root:
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e .\backend
 .\.venv\Scripts\python.exe -m alembic -c backend/alembic.ini upgrade head
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir backend --reload --host 127.0.0.1 --port 8000
+.\.venv\Scripts\python.exe -m app.cli init-secret
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir backend --reload --host 127.0.0.1 --port 8000 --no-proxy-headers
 ```
 
 If `python` is unavailable but the Python launcher is installed, use `py -3.12` for the first command. No virtual-environment activation is required.
@@ -55,7 +56,10 @@ backend/
     routers/         HTTP endpoints
     schemas/         Pydantic validation and response contracts
     database.py      Connection configuration and request sessions
-    models/          SQLAlchemy report table
+    models/          SQLAlchemy report and user tables
+    auth.py          Current-user authentication dependency
+    security.py      Password hashing and token verification
+    cli.py           Local account and ownership administration
     services/        Transactional report operations
   migrations/        Alembic schema revisions
   alembic.ini        Migration configuration
@@ -63,7 +67,33 @@ backend/
   pyproject.toml     Package metadata and pinned direct dependencies
 ```
 
-Dependencies: FastAPI 0.142.2, Pydantic 2.13.5, Uvicorn 0.53.0, SQLAlchemy 2.1.2, Alembic 1.20.0. Application version: `0.4.0`.
+Dependencies: FastAPI 0.142.2, Pydantic 2.13.5, Uvicorn 0.53.0, SQLAlchemy 2.1.2, Alembic 1.20.0, argon2-cffi 25.1.0, PyJWT 2.15.1, python-multipart 0.0.32, email-validator 2.3.0. Application version: `0.5.0`. The lockfile pins transitive dependencies too.
+
+## Accounts and permissions
+
+| Endpoint | Behavior |
+| --- | --- |
+| `POST /auth/register` | JSON email, display_name, password; creates a student account |
+| `POST /auth/login` | Form fields username (email) and password; returns a bearer token valid for 900 seconds |
+| `GET /auth/me` | Returns the authenticated user's profile |
+
+In Swagger, first execute `/auth/register`. Click **Authorize**, enter the email as username and the same password, then click **Authorize** and **Close**. Protected requests now send the bearer token. Leave client ID and client secret empty. Reauthorize after the token expires.
+
+Passwords require 12–128 characters and preserve spaces exactly. Display names require 2–100 characters. Emails are normalized to lowercase; duplicate registration returns 409. Registration cannot assign staff privileges. Password hashes are never returned.
+
+Anyone can read reports. Creating a report requires login; editing and deleting require its owner or a staff account. Missing/invalid credentials return 401; insufficient permissions return 403. The server assigns `reporter_id` and `reported_by` from the account. These fields cannot be supplied or edited through the report API. Display names are public and do not prove campus identity.
+
+The signing secret is generated once in ignored `backend/data/auth.secret`. Alternatively set a randomly generated `AUTH_SECRET` of at least 32 bytes before starting the server. Keep it private and persistent across restarts. Replacing it invalidates all existing tokens. Swagger logout clears its stored token; it does not revoke a token already copied elsewhere. Roles are checked in the database on every request, so role changes take effect immediately.
+
+Local administration (requires trusted access to the server and database):
+
+```powershell
+.\.venv\Scripts\python.exe -m app.cli create-staff --email staff@example.org --name 'Campus Staff'
+.\.venv\Scripts\python.exe -m app.cli set-role --email student@example.org --role staff
+.\.venv\Scripts\python.exe -m app.cli assign-owner --item-id 1 --email student@example.org
+```
+
+Staff creation prompts for a password privately. Use `--role student` to demote an account. Assign legacy reports only after verifying their owner; matching display names is insufficient. Email verification, password reset, refresh tokens, and per-token revocation are deferred.
 
 ## Report API
 
@@ -78,18 +108,22 @@ Dependencies: FastAPI 0.142.2, Pydantic 2.13.5, Uvicorn 0.53.0, SQLAlchemy 2.1.2
 Example create request (use Swagger UI or PowerShell):
 
 ```powershell
+$password = Read-Host 'Choose a password (12–128 characters)' -MaskInput # PowerShell 7
+$account = @{email='student@example.org'; display_name='Vishnu'; password=$password} | ConvertTo-Json
+Invoke-RestMethod http://127.0.0.1:8000/auth/register -Method Post -ContentType 'application/json' -Body $account
+$login = Invoke-RestMethod http://127.0.0.1:8000/auth/login -Method Post -ContentType 'application/x-www-form-urlencoded' -Body @{username='student@example.org'; password=$password}
+$headers = @{Authorization="Bearer $($login.access_token)"}
 $report = @{
     title = 'Laptop Charger'
     description = 'Black Dell 65W charger'
     category = 'electronics'
     location = 'Central Library'
     type = 'lost'
-    reported_by = 'Vishnu'
 } | ConvertTo-Json
-$item = Invoke-RestMethod http://127.0.0.1:8000/items -Method Post -ContentType 'application/json' -Body $report
+$item = Invoke-RestMethod http://127.0.0.1:8000/items -Method Post -Headers $headers -ContentType 'application/json' -Body $report
 Invoke-RestMethod "http://127.0.0.1:8000/items/$($item.id)"
-Invoke-RestMethod "http://127.0.0.1:8000/items/$($item.id)" -Method Patch -ContentType 'application/json' -Body '{"status":"resolved"}'
-Invoke-RestMethod "http://127.0.0.1:8000/items/$($item.id)" -Method Delete
+Invoke-RestMethod "http://127.0.0.1:8000/items/$($item.id)" -Method Patch -Headers $headers -ContentType 'application/json' -Body '{"status":"resolved"}'
+Invoke-RestMethod "http://127.0.0.1:8000/items/$($item.id)" -Method Delete -Headers $headers
 ```
 
 The server assigns IDs, UTC timestamps, and initial status `open`. Categories are `electronics`, `clothing`, `documents`, `accessories`, or `other`. Type is `lost` or `found`. Status is `open` or `resolved`; claim statuses arrive with the claims workflow.
@@ -98,11 +132,11 @@ Text is trimmed; NUL characters and invalid Unicode surrogates are rejected. Tit
 
 Reports are stored in `backend/data/campus.db` by default, regardless of the directory from which you start the application. Reports survive restarts and code reloads. The database and SQLite sidecar files are excluded from Git. Phase 2 memory reports are not automatically imported.
 
-There is no authentication yet: `reported_by` is an unverified display name, and any client can edit or delete reports. The health endpoint checks API liveness only. Database failures return a generic 503 without SQL or submitted values.
+The health endpoint checks API liveness only. Database failures return a generic 503 without SQL or submitted values.
 
 ## Database configuration and migrations
 
-After updating from Phase 3, run `.\.venv\Scripts\python.exe -m alembic -c backend/alembic.ini upgrade head` before restarting. Migration 0002 adds listing/filter indexes and preserves reports.
+After updating, run `.\.venv\Scripts\python.exe -m alembic -c backend/alembic.ini upgrade head` before restarting. Migration 0002 adds listing/filter indexes. Migration 0003 adds accounts and ownership, preserving reports and ID sequences. Existing reports retain their display names and have no owner (`reporter_id: null`); only staff can modify them until a trusted administrator assigns ownership.
 
 To choose a different SQLite file, set an absolute URL before both migration and server commands:
 
@@ -150,12 +184,12 @@ Run from the project root:
 .\.venv\Scripts\python.exe -m unittest discover -s backend/tests -v
 ```
 
-Tests migrate isolated temporary databases and launch their own servers. They cover CRUD, persistence across real process restarts, deletion persistence, rollback, constraints, concurrency, migration roundtrips, metadata consistency, and the existing request protections. They never use your development database.
+Tests migrate isolated temporary databases and launch their own servers. They cover CRUD, persistence, rollback, constraints, concurrency, migration roundtrips, metadata consistency, request protections, account validation, exact password handling, JWT rejection, anonymous/cross-user access, staff moderation, role changes, legacy ownership, and authentication resource limits. They never use your development database.
 
 ## Local security limits
 
 Request bodies are limited to 16 KiB, including chunked requests. Lists return up to 100 reports; use `/items?limit=20&offset=20` for subsequent pages. Validation responses omit submitted values. The old 1,000-report memory cap is removed; disk growth and write flooding still require operational limits before deployment.
 
-Hostnames are restricted to `localhost` and `127.0.0.1`. Browser writes accept only origins `http://localhost:8000` and `http://127.0.0.1:8000`; scripts without an Origin header still work. Keep the server on loopback. These protections do not replace authentication or ownership checks.
+Hostnames are restricted to `localhost` and `127.0.0.1`. Browser writes accept only origins `http://localhost:8000` and `http://127.0.0.1:8000`; scripts without an Origin header still work. Keep the server on loopback. Authentication endpoints share a process-local limit of 60 requests/minute/client, with bounded limiter memory and at most two concurrent Argon2 operations. Busy hashing returns 503; throttling returns 429. These limits require shared enforcement and trusted proxy configuration before a multi-worker deployment.
 
 See [SECURITY.md](SECURITY.md) for fixed findings, remaining threats, and verification evidence.

@@ -33,7 +33,6 @@ class ItemCreate(InputModel):
     category: Category
     location: Location
     type: ReportType
-    reported_by: Reporter
 
 
 class ItemQuery(InputModel):
@@ -53,7 +52,6 @@ class ItemUpdate(InputModel):
     category: Category | None = None
     location: Location | None = None
     type: ReportType | None = None
-    reported_by: Reporter | None = None
     status: ReportStatus | None = None
 
     @model_validator(mode="after")
@@ -68,6 +66,8 @@ class ItemUpdate(InputModel):
 class ItemRead(ItemCreate):
     model_config = ConfigDict(from_attributes=True, str_strip_whitespace=True, extra="forbid")
     id: int
+    reported_by: Reporter
+    reporter_id: int | None
     status: ReportStatus
     created_at: datetime
     updated_at: datetime

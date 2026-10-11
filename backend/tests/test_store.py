@@ -34,8 +34,7 @@ class DatabaseTests(unittest.TestCase):
 
     def report(self):
         return ItemCreate(title='Black Wallet', description='Black leather wallet',
-                          category='accessories', location='Library', type='found',
-                          reported_by='Student')
+                          category='accessories', location='Library', type='found')
 
     def test_constraints_rollback_and_recovery(self):
         with Session(self.engine) as session:
@@ -78,7 +77,7 @@ class DatabaseTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             verify_database(self.engine)
         with self.engine.begin() as connection:
-            connection.execute(text("UPDATE alembic_version SET version_num = '0002'"))
+            connection.execute(text("UPDATE alembic_version SET version_num = '0003'"))
             connection.execute(text("DROP TABLE items"))
         from sqlalchemy.exc import SQLAlchemyError
         with self.assertRaises(SQLAlchemyError):
@@ -101,13 +100,26 @@ class DatabaseTests(unittest.TestCase):
 
     def test_index_upgrade_preserves_existing_reports(self):
         self.migrate('downgrade', '0001')
-        with Session(self.engine) as session:
-            item = ItemRepository(session).create(self.report())
+        with self.engine.begin() as connection:
+            connection.execute(text("INSERT INTO items (title,description,category,location,type,reported_by,status,created_at,updated_at) VALUES ('Black Wallet','Black leather wallet','accessories','Library','found','Legacy Student','open','2020-01-01','2020-01-01')"))
+            connection.execute(text("INSERT INTO items (id,title,description,category,location,type,reported_by,status,created_at,updated_at) VALUES (20,'Black Wallet','Black leather wallet','accessories','Library','found','Legacy Student','open','2020-01-01','2020-01-01')"))
+            connection.execute(text("DELETE FROM items WHERE id=20"))
         self.migrate('upgrade', 'head')
         with Session(self.engine) as session:
-            self.assertEqual(ItemRepository(session).get(item.id), item)
+            item = ItemRepository(session).list()[0]
+            self.assertEqual(item.reported_by, 'Legacy Student')
+            self.assertIsNone(item.reporter_id)
+            self.assertGreater(ItemRepository(session).create(self.report()).id, 20)
         with self.engine.connect() as connection:
             plan = connection.execute(text('EXPLAIN QUERY PLAN SELECT * FROM items ORDER BY created_at DESC, id DESC LIMIT 20')).all()
             self.assertIn('ix_items_created_id', str(plan))
             plan = connection.execute(text("EXPLAIN QUERY PLAN SELECT * FROM items WHERE category='accessories' AND type='found' AND status='open' ORDER BY created_at DESC, id DESC LIMIT 20")).all()
             self.assertIn('ix_items_category_type_status_created_id', str(plan))
+
+    def test_ownership_foreign_key_rejects_missing_users(self):
+        with Session(self.engine) as session:
+            item = ItemRepository(session).create(self.report())
+            with self.assertRaises(IntegrityError):
+                session.execute(text("UPDATE items SET reporter_id=999999 WHERE id=:id"), {'id': item.id})
+            session.rollback()
+            self.assertIsNone(ItemRepository(session).get(item.id).reporter_id)

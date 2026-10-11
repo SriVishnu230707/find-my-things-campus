@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "campus-lost-and-found-api"
-version = "0.4.0"
-description = "Campus Lost-and-Found API — Phase 4 search and filtering"
+version = "0.5.0"
+description = "Campus Lost-and-Found API — Phase 5 authentication and permissions"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi==0.142.2",
@@ -13,6 +13,10 @@ dependencies = [
     "uvicorn==0.53.0",
     "sqlalchemy==2.1.2",
     "alembic==1.20.0",
+    "argon2-cffi==25.1.0",
+    "PyJWT==2.15.1",
+    "python-multipart==0.0.32",
+    "email-validator==2.3.0",
 ]
 
 [tool.setuptools.packages.find]

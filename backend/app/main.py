@@ -10,6 +10,8 @@ from app.middleware import RequestGuards
 
 from app.routers.health import router as health_router
 from app.routers.items import router as items_router
+from app.routers.auth import router as auth_router
+from app.security import signing_secret, dummy_hash
 from contextlib import asynccontextmanager
 import logging
 from sqlalchemy.exc import SQLAlchemyError
@@ -22,20 +24,23 @@ async def lifespan(app):
             verify_database(engine)
         except SQLAlchemyError:
             raise RuntimeError("Database unavailable or not migrated; run alembic upgrade head") from None
+        signing_secret()
+        dummy_hash()
         yield
     finally:
         engine.dispose()
 
 app = FastAPI(
     title="Campus Lost-and-Found API",
-    description="Search, filter, and manage campus lost-and-found reports stored in SQLite.",
-    version="0.4.0",
+    description="Browse campus reports. Sign in to create reports and manage your own; staff can moderate.",
+    version="0.5.0",
     lifespan=lifespan,
 )
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1"])
 app.add_middleware(RequestGuards)
 app.include_router(health_router)
 app.include_router(items_router)
+app.include_router(auth_router)
 
 @app.exception_handler(SQLAlchemyError)
 async def database_error(request, error):
