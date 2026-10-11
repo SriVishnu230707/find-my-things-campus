@@ -1,6 +1,6 @@
 # Campus Lost-and-Found API
 
-Phase 3 stores lost-and-found reports persistently with SQLite, SQLAlchemy, and Alembic.
+Phase 4 adds keyword search, combined filters, and chronological sorting to persistent reports.
 
 ## Requirements
 
@@ -63,7 +63,7 @@ backend/
   pyproject.toml     Package metadata and pinned direct dependencies
 ```
 
-Dependencies: FastAPI 0.142.2, Pydantic 2.13.5, Uvicorn 0.53.0, SQLAlchemy 2.1.2, Alembic 1.20.0. Application version: `0.3.0`.
+Dependencies: FastAPI 0.142.2, Pydantic 2.13.5, Uvicorn 0.53.0, SQLAlchemy 2.1.2, Alembic 1.20.0. Application version: `0.4.0`.
 
 ## Report API
 
@@ -102,6 +102,8 @@ There is no authentication yet: `reported_by` is an unverified display name, and
 
 ## Database configuration and migrations
 
+After updating from Phase 3, run `.\.venv\Scripts\python.exe -m alembic -c backend/alembic.ini upgrade head` before restarting. Migration 0002 adds listing/filter indexes and preserves reports.
+
 To choose a different SQLite file, set an absolute URL before both migration and server commands:
 
 ```powershell
@@ -115,7 +117,32 @@ SQLite serializes writes and waits up to five seconds on a busy database. Partia
 
 For a simple local backup, stop the server before copying `campus.db` to a safe location. Do not commit reports or database credentials. `downgrade base` drops the reports table and its data; use it only on disposable databases.
 
-## Verification
+## Search and filtering
+
+`GET /items` accepts the following optional query parameters:
+
+| Parameter | Meaning |
+| --- | --- |
+| `q` | Trimmed substring in title OR description; 1–120 characters |
+| `location` | Trimmed location substring; 1–150 characters |
+| `category` | electronics, clothing, documents, accessories, other |
+| `type` | lost or found |
+| `status` | open or resolved |
+| `sort` | newest (default) or oldest, based on creation time then ID |
+| `limit` | 1–100, default 100 |
+| `offset` | Nonnegative signed 64-bit integer, default 0 |
+
+```powershell
+Invoke-RestMethod 'http://127.0.0.1:8000/items?q=charger&type=found&category=electronics&location=library&status=open&sort=newest&limit=20'
+```
+
+Search is case-insensitive for ASCII letters under SQLite's default rules; full Unicode case folding is not provided. It is literal substring matching, not fuzzy search or full-text ranking. `%`, `_`, and `/` are treated literally. All supplied filters are combined with AND around the title/description OR condition. SQLAlchemy binds user values as query parameters.
+
+Filtering and sorting happen in the database before pagination. Results remain a JSON list; no matches returns 200 with `[]`. Invalid or unknown query parameters return 422. Changing the default order from ID ascending to newest first is intentional. Timestamp ties use IDs; editing a report does not change its position. New reports between offset-page requests can shift pages.
+
+Migration 0002 indexes chronological ordering and category/type/status combinations. Substring search still scans text; these indexes do not make arbitrary contains-search fast.
+
+## Run checks
 
 Run from the project root:
 

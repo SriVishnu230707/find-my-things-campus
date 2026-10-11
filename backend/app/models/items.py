@@ -1,6 +1,6 @@
 """Persistent report model and database-level constraints."""
 from datetime import datetime, timezone
-from sqlalchemy import CheckConstraint, DateTime, Integer, String
+from sqlalchemy import CheckConstraint, DateTime, Integer, String, Index
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import TypeDecorator
 from app.database import Base
@@ -24,6 +24,8 @@ class UTCDateTime(TypeDecorator):
 class Item(Base):
     __tablename__ = "items"
     __table_args__ = (
+        Index("ix_items_created_id", "created_at", "id"),
+        Index("ix_items_category_type_status_created_id", "category", "type", "status", "created_at", "id"),
         CheckConstraint("type IN ('lost', 'found')", name="ck_items_type"),
         CheckConstraint("status IN ('open', 'resolved')", name="ck_items_status"),
         CheckConstraint("category IN ('electronics', 'clothing', 'documents', 'accessories', 'other')", name="ck_items_category"),

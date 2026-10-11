@@ -28,8 +28,8 @@ async def lifespan(app):
 
 app = FastAPI(
     title="Campus Lost-and-Found API",
-    description="Report lost and found items. Phase 3 stores reports persistently in SQLite.",
-    version="0.3.0",
+    description="Search, filter, and manage campus lost-and-found reports stored in SQLite.",
+    version="0.4.0",
     lifespan=lifespan,
 )
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1"])

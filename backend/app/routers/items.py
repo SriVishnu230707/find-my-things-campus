@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
 
-from app.schemas.items import ItemCreate, ItemRead, ItemUpdate
+from app.schemas.items import ItemCreate, ItemRead, ItemUpdate, ItemQuery
 from sqlalchemy.orm import Session
 from app.database import get_session
 from app.services.items import ItemRepository
@@ -28,9 +28,9 @@ def create_item(data: ItemCreate, store: Store, response: Response) -> ItemRead:
 
 
 @router.get("", response_model=list[ItemRead])
-def list_items(store: Store, limit: Annotated[int, Query(ge=1, le=100)] = 100,
-               offset: Annotated[int, Query(ge=0, le=2**63 - 1)] = 0) -> list[ItemRead]:
-    return store.list(limit, offset)
+def list_items(store: Store, filters: Annotated[ItemQuery, Query()]) -> list[ItemRead]:
+    """Search title/description and combine filters before sorting and paging."""
+    return store.list(filters)
 
 
 @router.get("/{item_id}", response_model=ItemRead)

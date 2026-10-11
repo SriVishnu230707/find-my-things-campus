@@ -16,7 +16,9 @@ from app.services.items import ItemRepository
 
 class DatabaseTests(unittest.TestCase):
     def setUp(self):
-        self.directory = tempfile.TemporaryDirectory()
+        temporary_root = Path(__file__).resolve().parents[2] / '.verification'
+        temporary_root.mkdir(exist_ok=True)
+        self.directory = tempfile.TemporaryDirectory(dir=temporary_root)
         self.addCleanup(self.directory.cleanup)
         self.url = 'sqlite:///' + (Path(self.directory.name) / 'test.db').as_posix()
         self.environment = {**os.environ, 'DATABASE_URL': self.url}
@@ -76,8 +78,36 @@ class DatabaseTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             verify_database(self.engine)
         with self.engine.begin() as connection:
-            connection.execute(text("UPDATE alembic_version SET version_num = '0001'"))
+            connection.execute(text("UPDATE alembic_version SET version_num = '0002'"))
             connection.execute(text("DROP TABLE items"))
         from sqlalchemy.exc import SQLAlchemyError
         with self.assertRaises(SQLAlchemyError):
             verify_database(self.engine)
+
+    def test_chronological_order_and_timestamp_ties(self):
+        from app.schemas.items import ItemQuery, ItemUpdate
+        with Session(self.engine) as session:
+            repo = ItemRepository(session)
+            ids = [repo.create(self.report()).id for _ in range(3)]
+            session.execute(text("UPDATE items SET created_at = '2020-01-01 00:00:00.000000'"))
+            session.commit()
+            self.assertEqual([row.id for row in repo.list()], ids[::-1])
+            self.assertEqual([row.id for row in repo.list(ItemQuery(sort='oldest'))], ids)
+            session.execute(text("UPDATE items SET created_at = '2021-01-01 00:00:00.000000' WHERE id = :id"),
+                            {'id': ids[0]})
+            session.commit()
+            repo.update(ids[2], ItemUpdate(status='resolved'))
+            self.assertEqual([row.id for row in repo.list()], [ids[0], ids[2], ids[1]])
+
+    def test_index_upgrade_preserves_existing_reports(self):
+        self.migrate('downgrade', '0001')
+        with Session(self.engine) as session:
+            item = ItemRepository(session).create(self.report())
+        self.migrate('upgrade', 'head')
+        with Session(self.engine) as session:
+            self.assertEqual(ItemRepository(session).get(item.id), item)
+        with self.engine.connect() as connection:
+            plan = connection.execute(text('EXPLAIN QUERY PLAN SELECT * FROM items ORDER BY created_at DESC, id DESC LIMIT 20')).all()
+            self.assertIn('ix_items_created_id', str(plan))
+            plan = connection.execute(text("EXPLAIN QUERY PLAN SELECT * FROM items WHERE category='accessories' AND type='found' AND status='open' ORDER BY created_at DESC, id DESC LIMIT 20")).all()
+            self.assertIn('ix_items_category_type_status_created_id', str(plan))

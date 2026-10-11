@@ -1,4 +1,4 @@
-# Security review through Phase 3
+# Security review through Phase 4
 
 Reviewed 4 October 2026. This is a local learning prototype, not a campus production service.
 
@@ -26,6 +26,6 @@ Responses processed by the request guard also receive `Cache-Control: no-store` 
 
 ## Verification
 
-17 tests cover HTTP CRUD, malformed/invalid fields, missing IDs, normal and chunked oversized requests, Host/Origin guards, pagination, error redaction, restart persistence, database failure recovery, constraints, rollback, concurrent inserts, migration consistency/roundtrips, NUL/invalid Unicode, deeply nested JSON, and startup schema checks. Security headers also cover early guard rejections.
+23 tests cover HTTP CRUD, malformed/invalid fields, missing IDs, normal and chunked oversized requests, Host/Origin guards, pagination, error redaction, restart persistence, database failure recovery, constraints, rollback, concurrent inserts, migration consistency/roundtrips, NUL/invalid Unicode, deeply nested JSON, and startup schema checks. Phase 4 adds combined search/filter validation, literal wildcard/SQL-looking input, deterministic sorting, filtered pagination, and data-preserving index migration checks. Security headers also cover early guard rejections.
 
 All 18 pinned packages in the Phase 3 lockfile were queried against OSV on 4 October 2026; no matching advisories were returned. An audit is a database snapshot, not proof that dependencies are vulnerability-free. Repeat after dependency changes.

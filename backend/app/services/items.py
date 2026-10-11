@@ -1,9 +1,9 @@
 """Transactional report operations using a request-scoped session."""
 from datetime import datetime, timezone
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, select, update, or_
 from sqlalchemy.orm import Session
 from app.models.items import Item
-from app.schemas.items import ItemCreate, ItemRead, ItemUpdate
+from app.schemas.items import ItemCreate, ItemRead, ItemUpdate, ItemQuery
 
 class ItemRepository:
     def __init__(self, session: Session):
@@ -18,8 +18,23 @@ class ItemRepository:
         self.session.commit()
         return result
 
-    def list(self, limit: int = 100, offset: int = 0) -> list[ItemRead]:
-        statement = select(Item).order_by(Item.id).offset(offset).limit(limit)
+    def list(self, filters: ItemQuery | None = None) -> list[ItemRead]:
+        filters = filters or ItemQuery()
+        statement = select(Item)
+        if filters.q is not None:
+            statement = statement.where(or_(
+                Item.title.icontains(filters.q, autoescape=True),
+                Item.description.icontains(filters.q, autoescape=True),
+            ))
+        if filters.location is not None:
+            statement = statement.where(Item.location.icontains(filters.location, autoescape=True))
+        for name in ("category", "type", "status"):
+            value = getattr(filters, name)
+            if value is not None:
+                statement = statement.where(getattr(Item, name) == value)
+        order = (Item.created_at.desc(), Item.id.desc()) if filters.sort == "newest" else (
+            Item.created_at.asc(), Item.id.asc())
+        statement = statement.order_by(*order).offset(filters.offset).limit(filters.limit)
         return [ItemRead.model_validate(item) for item in self.session.scalars(statement)]
 
     def get(self, item_id: int) -> ItemRead | None:

@@ -13,6 +13,7 @@ import time
 import unittest
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from urllib.parse import urlencode
 
 BACKEND = Path(__file__).resolve().parents[1]
 REPORT = dict(title="Laptop Charger", description="Black Dell 65W charger",
@@ -23,7 +24,9 @@ REPORT = dict(title="Laptop Charger", description="Black Dell 65W charger",
 class ReportAPI(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.directory = tempfile.TemporaryDirectory()
+        temporary_root = BACKEND.parent / ".verification"
+        temporary_root.mkdir(exist_ok=True)
+        cls.directory = tempfile.TemporaryDirectory(dir=temporary_root)
         cls.addClassCleanup(cls.directory.cleanup)
         cls.environment = {**os.environ, "DATABASE_URL": "sqlite:///" +
                            (Path(cls.directory.name) / "test.db").as_posix(),
@@ -36,8 +39,8 @@ class ReportAPI(unittest.TestCase):
             port = sock.getsockname()[1]
         cls.base = f"http://127.0.0.1:{port}"
         cls.port = port
-        cls.start_server()
         cls.addClassCleanup(cls.stop_server)
+        cls.start_server()
 
     @classmethod
     def start_server(cls):
@@ -49,6 +52,8 @@ class ReportAPI(unittest.TestCase):
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
         for _ in range(100):
+            if cls.server.poll() is not None:
+                raise RuntimeError("Test server exited during startup")
             try:
                 if cls.request("GET", "/health")[0] == 200:
                     return
@@ -58,6 +63,8 @@ class ReportAPI(unittest.TestCase):
 
     @classmethod
     def stop_server(cls):
+        if cls.server.poll() is not None:
+            return
         cls.server.terminate()
         try:
             cls.server.wait(timeout=5)
@@ -199,6 +206,56 @@ class ReportAPI(unittest.TestCase):
             _, _, denied_headers = self.raw_request(method, path, body, extra)
             self.assertEqual(denied_headers["x-content-type-options"], "nosniff")
             self.assertEqual(denied_headers["cache-control"], "no-store")
+
+    def search(self, **filters):
+        return self.request("GET", "/items?" + urlencode(filters))
+
+    def test_search_title_description_and_combined_filters(self):
+        title_match = self.request("POST", "/items", {**REPORT, "type": "found"})[1]
+        description_match = self.request("POST", "/items", {
+            **REPORT, "title": "Black Adapter", "location": "Library second floor"})[1]
+        unrelated = self.request("POST", "/items", {
+            **REPORT, "title": "Blue Bottle", "description": "Blue metal bottle",
+            "category": "other", "location": "Canteen"})[1]
+        self.request("PATCH", f"/items/{unrelated['id']}", {"status": "resolved"})
+        self.assertEqual({item["id"] for item in self.search(q="  CHARGER  ")[1]},
+                         {title_match["id"], description_match["id"]})
+        self.assertEqual([item["id"] for item in self.search(
+            q="charger", location="LIBRARY", type="found", category="electronics", status="open")[1]],
+            [title_match["id"]])
+        for filters, expected in [({"type": "found"}, title_match),
+                                  ({"status": "resolved"}, unrelated),
+                                  ({"category": "other"}, unrelated),
+                                  ({"location": "canteen"}, unrelated)]:
+            self.assertEqual([item["id"] for item in self.search(**filters)[1]], [expected["id"]])
+        self.assertEqual(self.search(q="not-present-anywhere")[1], [])
+        self.assertEqual(self.search(q="charger", status="resolved")[1], [])
+
+    def test_search_literal_wildcards_and_sql_text(self):
+        for needle in ["%", "_", "/", "' OR 1=1 --"]:
+            item = self.request("POST", "/items", {**REPORT, "title": "Object " + needle,
+                                                   "location": "Room " + needle})[1]
+            self.assertEqual([row["id"] for row in self.search(q=needle)[1]], [item["id"]])
+            self.assertEqual([row["id"] for row in self.search(location=needle)[1]], [item["id"]])
+            self.request("DELETE", f"/items/{item['id']}")
+
+    def test_query_validation(self):
+        for filters in [{"q": " "}, {"q": "x" * 121}, {"q": "bad\x00text"},
+                        {"location": " "}, {"location": "x" * 151},
+                        {"category": "invalid"}, {"type": "missing"},
+                        {"status": "claimed"}, {"sort": "invalid"}, {"typo": "value"}]:
+            with self.subTest(filters=filters):
+                self.assertEqual(self.search(**filters)[0], 422)
+
+    def test_sorted_filtered_pagination(self):
+        ids = [self.request("POST", "/items", {**REPORT, "title": f"Charger {index}"})[1]["id"]
+               for index in range(4)]
+        self.request("POST", "/items", {**REPORT, "title": "Water Bottle",
+                                          "description": "Blue metal bottle"})
+        self.assertEqual([row["id"] for row in self.search(q="Charger", sort="oldest")[1]], ids)
+        self.assertEqual([row["id"] for row in self.search(q="Charger")[1]], ids[::-1])
+        self.assertEqual([row["id"] for row in self.search(q="Charger", limit=2, offset=1)[1]],
+                         ids[::-1][1:3])
 
     def test_persistence_across_restart(self):
         item = self.request("POST", "/items", REPORT)[1]

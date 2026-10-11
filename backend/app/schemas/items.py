@@ -12,6 +12,7 @@ Reporter = Annotated[str, Field(min_length=2, max_length=100)]
 Category = Literal["electronics", "clothing", "documents", "accessories", "other"]
 ReportType = Literal["lost", "found"]
 ReportStatus = Literal["open", "resolved"]
+SortOrder = Literal["newest", "oldest"]
 
 
 class InputModel(BaseModel):
@@ -33,6 +34,17 @@ class ItemCreate(InputModel):
     location: Location
     type: ReportType
     reported_by: Reporter
+
+
+class ItemQuery(InputModel):
+    q: Annotated[str, Field(min_length=1, max_length=120)] | None = None
+    location: Annotated[str, Field(min_length=1, max_length=150)] | None = None
+    category: Category | None = None
+    type: ReportType | None = None
+    status: ReportStatus | None = None
+    sort: SortOrder = "newest"
+    limit: int = Field(default=100, ge=1, le=100)
+    offset: int = Field(default=0, ge=0, le=2**63 - 1)
 
 
 class ItemUpdate(InputModel):
