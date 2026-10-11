@@ -12,6 +12,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from app.database import engine, verify_database
 from app.middleware import RequestGuards
 from app.routers.auth import router as auth_router
+from app.routers.claims import router as claims_router
 from app.routers.health import router as health_router
 from app.routers.items import router as items_router
 from app.security import dummy_hash, signing_secret
@@ -36,7 +37,7 @@ async def lifespan(app):
 app = FastAPI(
     title="Campus Lost-and-Found API",
     description="Browse campus reports. Sign in to create reports and manage your own; staff can moderate.",
-    version="0.5.0",
+    version="0.6.0",
     lifespan=lifespan,
 )
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1"])
@@ -44,6 +45,7 @@ app.add_middleware(RequestGuards)
 app.include_router(health_router)
 app.include_router(items_router)
 app.include_router(auth_router)
+app.include_router(claims_router)
 
 
 @app.exception_handler(SQLAlchemyError)

@@ -2,7 +2,16 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    false,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import TypeDecorator
 
@@ -70,5 +79,8 @@ class Item(Base):
         index=True,
     )
     status: Mapped[str] = mapped_column(String(10))
+    archived: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false()
+    )
     created_at: Mapped[datetime] = mapped_column(UTCDateTime())
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime())

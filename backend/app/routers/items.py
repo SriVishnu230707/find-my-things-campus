@@ -69,3 +69,8 @@ def check_permission(item_id, store, user):
         raise HTTPException(404, "Item not found")
     if user.role != "staff" and item.reporter_id != user.id:
         raise HTTPException(403, "You may only modify your own reports")
+
+
+@router.post("/{item_id}/archive", response_model=ItemRead)
+def archive_item(item_id: ItemID, store: Store, user: CurrentUser):
+    return store.archive(item_id, user)

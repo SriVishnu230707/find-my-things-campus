@@ -1,6 +1,6 @@
 # Campus Lost-and-Found API
 
-Phase 5 adds student accounts, Argon2id password hashing, JWT login, report ownership, and staff moderation to the searchable persistent API.
+Phase 6 adds private item claims, review, handover confirmation, and report archival to the authenticated searchable API.
 
 ## Requirements
 
@@ -67,7 +67,31 @@ backend/
   pyproject.toml     Package metadata and pinned direct dependencies
 ```
 
-Dependencies: FastAPI 0.142.2, Pydantic 2.13.5, Uvicorn 0.53.0, SQLAlchemy 2.1.2, Alembic 1.20.0, argon2-cffi 25.1.0, PyJWT 2.15.1, python-multipart 0.0.32, email-validator 2.3.0. Application version: `0.5.0`. The lockfile pins transitive dependencies too.
+Dependencies: FastAPI 0.142.2, Pydantic 2.13.5, Uvicorn 0.53.0, SQLAlchemy 2.1.2, Alembic 1.20.0, argon2-cffi 25.1.0, PyJWT 2.15.1, python-multipart 0.0.32, email-validator 2.3.0. Application version: `0.6.0`. The lockfile pins transitive dependencies too.
+
+## Private claims and handover
+
+| Endpoint | Access and behavior |
+| --- | --- |
+| `POST /items/{item_id}/claims` | Student submits JSON `{"evidence":"Identifying details only the owner knows"}` |
+| `GET /claims/me` | Authenticated user reads their own claims |
+| `GET /items/{item_id}/claims` | Report owner or staff reads private claims |
+| `PATCH /claims/{claim_id}/decision` | Report owner or staff submits `{"decision":"approved"}` or `{"decision":"rejected"}` |
+| `POST /claims/{claim_id}/withdraw` | Claimant withdraws a pending or approved claim |
+| `POST /claims/{claim_id}/handover` | Report owner or staff confirms return of an approved claim |
+| `POST /items/{item_id}/archive` | Report owner or staff archives a report with no active claims |
+
+Claims require an open, unarchived **found** report. Students cannot claim their own reports. Evidence is trimmed, requires 10–2000 characters, and is never included in public report responses. The claim lists support `limit` (1–100, default 100) and `offset`, ordered by newest ID. No other student's claims are exposed through `/claims/me`.
+
+The workflow is `pending → approved → completed`, or `pending → rejected`. Claimants may withdraw pending/approved claims. Repeated or invalid transitions return 409. Approval reserves the item and blocks new submissions, while other pending claims remain available for review. Withdrawal releases the reservation. Handover atomically completes the winning claim, resolves the report, and rejects remaining pending claims. A resolved report cannot be reopened through ordinary PATCH once it has claim history.
+
+Only one active claim per student/report and one approved/completed winner per report are allowed. Database indexes enforce these constraints; report-level write locks serialize claim decisions, submissions, edits, deletion, and archival. Competing approvals return one success and one conflict.
+
+Reports with any claim history cannot be hard-deleted (409). Archive them after active claims are completed, rejected, or withdrawn. Archived reports remain accessible by ID and retain private claim history; public lists exclude them unless `archived=true` is supplied. Archived reports cannot be edited or receive claims. Reports without claims can still be deleted. After any claim has been submitted, report type/status changes must follow the claim workflow; descriptive edits remain possible until archival.
+
+To try this in Swagger: create two student accounts; authorize as the finder and create a found report; log out and authorize as the claimant to submit evidence; authorize as the finder to review, approve, then confirm handover **after returning the item**. The API records the review decision; it cannot independently establish physical ownership. Staff can review legacy reports whose reporter has no account.
+
+Migration 0004 adds archival and claims while preserving existing reports, accounts, ownership, and report IDs. Run `alembic upgrade head` before restarting. Downgrading 0004 permanently removes claim history and archive flags; use downgrade only on disposable databases.
 
 ## Accounts and permissions
 
@@ -126,7 +150,7 @@ Invoke-RestMethod "http://127.0.0.1:8000/items/$($item.id)" -Method Patch -Heade
 Invoke-RestMethod "http://127.0.0.1:8000/items/$($item.id)" -Method Delete -Headers $headers
 ```
 
-The server assigns IDs, UTC timestamps, and initial status `open`. Categories are `electronics`, `clothing`, `documents`, `accessories`, or `other`. Type is `lost` or `found`. Status is `open` or `resolved`; claim statuses arrive with the claims workflow.
+The server assigns IDs, UTC timestamps, and initial status `open`. Categories are `electronics`, `clothing`, `documents`, `accessories`, or `other`. Type is `lost` or `found`. Report status is `open` or `resolved`; claim status is tracked separately.
 
 Text is trimmed; NUL characters and invalid Unicode surrogates are rejected. Titles require 3–120 characters, descriptions 10–2000, locations 2–150, and reporter names 2–100. Unknown fields are rejected. PATCH accepts only supplied fields, requires at least one change, and rejects explicit null values. IDs and timestamps cannot be edited. Invalid input returns 422; absent reports return 404.
 

@@ -2,12 +2,14 @@
 
 from datetime import datetime, timezone
 
+from fastapi import HTTPException
 from sqlalchemy import delete, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.models.items import Item
 from app.models.users import User
 from app.schemas.items import ItemCreate, ItemQuery, ItemRead, ItemUpdate
+from app.services.claims import has_claims, lock_item, moderator
 
 
 class ItemRepository:
@@ -32,7 +34,7 @@ class ItemRepository:
 
     def list(self, filters: ItemQuery | None = None) -> list[ItemRead]:
         filters = filters or ItemQuery()
-        statement = select(Item)
+        statement = select(Item).where(Item.archived == filters.archived)
         if filters.q is not None:
             statement = statement.where(
                 or_(
@@ -68,6 +70,17 @@ class ItemRepository:
         self, item_id: int, changes: ItemUpdate, actor: User | None = None
     ) -> ItemRead | None:
         # Only supplied columns change, avoiding stale snapshots of other fields.
+        current = lock_item(self.session, item_id)
+        if actor is not None:
+            moderator(current, actor)
+        if current.archived:
+            raise HTTPException(409, "Archived reports cannot be edited")
+        if {"type", "status"} & changes.model_fields_set and has_claims(
+            self.session, item_id
+        ):
+            raise HTTPException(
+                409, "Use the claim workflow for reports with claim history"
+            )
         statement = (
             update(Item)
             .where(Item.id == item_id)
@@ -85,6 +98,14 @@ class ItemRepository:
         return result
 
     def delete(self, item_id: int, actor: User | None = None) -> bool:
+        # Lock before checking history so a concurrent claim cannot be lost.
+        if self.session.get(Item, item_id) is None:
+            return False
+        current = lock_item(self.session, item_id)
+        if actor is not None:
+            moderator(current, actor)
+        if has_claims(self.session, item_id):
+            raise HTTPException(409, "Report has claim history; archive it instead")
         statement = delete(Item).where(Item.id == item_id).returning(Item.id)
         if actor is not None and actor.role != "staff":
             statement = statement.where(Item.reporter_id == actor.id)
@@ -92,3 +113,16 @@ class ItemRepository:
         deleted = result.scalar_one_or_none() is not None
         self.session.commit()
         return deleted
+
+    def archive(self, item_id, actor):
+        item = lock_item(self.session, item_id)
+        moderator(item, actor)
+        if has_claims(self.session, item_id, active=True):
+            raise HTTPException(
+                409, "Finish or withdraw active claims before archiving"
+            )
+        item.archived = True
+        item.updated_at = datetime.now(timezone.utc)
+        result = ItemRead.model_validate(item)
+        self.session.commit()
+        return result

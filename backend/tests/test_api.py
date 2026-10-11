@@ -153,6 +153,7 @@ class ReportAPI(unittest.TestCase):
             sqlite3.connect(Path(self.directory.name) / "test.db")
         ) as connection:
             with connection:
+                connection.execute("DELETE FROM claims")
                 connection.execute("DELETE FROM items")
 
     def test_full_lifecycle(self):

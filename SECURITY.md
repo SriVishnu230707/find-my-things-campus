@@ -1,4 +1,4 @@
-# Security review through Phase 5
+# Security review through Phase 6
 
 Reviewed 11 October 2026. This is a local learning prototype, not a campus production service.
 
@@ -33,8 +33,14 @@ Responses processed by the request guard also receive `Cache-Control: no-store` 
 
 ## Verification
 
-34 tests cover CRUD, search, persistence, constraints, migration consistency and ID preservation, request guards, account/password validation, expired/tampered/invalid JWTs, deleted accounts, forged role claims, anonymous and cross-user access, staff moderation, immediate role changes, legacy ownership assignment, and bounded authentication resources. Security headers also cover early guard rejections.
+Phase 6 keeps ownership evidence outside public report responses. Claim reads are restricted to the claimant's own list or the report owner/staff review list. Students cannot submit claims on their own reports or review their own claims. Database foreign keys preserve history, partial unique indexes prevent duplicate active claims and multiple winners, and serialized report transactions prevent claim/delete/archive races. Handover resolves the report and rejects other pending claims in one transaction. Ordinary report type/status edits cannot bypass this workflow.
+
+Claim evidence is sensitive stored text, not encrypted application data. Trusted machine/database administrators can read it. Define retention, encryption, backups, account verification, and claim submission quotas before real campus use. Approval records a human decision rather than proving physical ownership.
+
+41 tests cover CRUD, search, persistence, constraints, migration consistency and ID preservation, request guards, account/password validation, expired/tampered/invalid JWTs, deleted accounts, forged role claims, anonymous and cross-user access, staff moderation, immediate role changes, legacy ownership assignment, bounded authentication resources, claim privacy and transitions, simultaneous approval/submission, handover, archival, and claim persistence after restart. Security headers also cover early guard rejections.
 
 An Edge browser check against an isolated database verified Swagger OAuth2 login, authenticated report creation, rendered account profile, persisted owner updates, public reads, anonymous 401 responses, and cross-user 403 responses.
+
+Phase 6 browser verification additionally covered Swagger claim submission and evidence rendering, private review denial, approval, persisted handover/resolution, deletion conflicts, and successful archival.
 
 All 26 pinned packages were queried against OSV on 11 October 2026; no matching advisories were returned. An audit is a database snapshot, not proof that dependencies are vulnerability-free. Repeat after dependency changes.

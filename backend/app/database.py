@@ -44,6 +44,7 @@ def verify_database(db_engine):
     """Reject stale revisions and missing report columns before serving traffic."""
     from sqlalchemy import select
 
+    from app.models.claims import Claim
     from app.models.items import Item
     from app.models.users import User
 
@@ -55,6 +56,7 @@ def verify_database(db_engine):
             raise RuntimeError("Database migration required; run alembic upgrade head")
         connection.execute(select(Item).limit(0))
         connection.execute(select(User).limit(0))
+        connection.execute(select(Claim).limit(0))
 
 
 def get_session():

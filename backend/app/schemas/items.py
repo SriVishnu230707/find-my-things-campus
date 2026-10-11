@@ -37,6 +37,7 @@ class ItemCreate(InputModel):
 
 
 class ItemQuery(InputModel):
+    archived: bool = False
     q: Annotated[str, Field(min_length=1, max_length=120)] | None = None
     location: Annotated[str, Field(min_length=1, max_length=150)] | None = None
     category: Category | None = None
@@ -69,6 +70,7 @@ class ItemRead(ItemCreate):
         from_attributes=True, str_strip_whitespace=True, extra="forbid"
     )
     id: int
+    archived: bool
     reported_by: Reporter
     reporter_id: int | None
     status: ReportStatus

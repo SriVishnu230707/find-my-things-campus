@@ -3,6 +3,7 @@
 from alembic import context
 
 from app.database import Base, engine
+from app.models.claims import Claim  # noqa: F401 -- register table metadata
 from app.models.items import Item  # noqa: F401 -- register table metadata
 from app.models.users import User  # noqa: F401 -- register table metadata
 
