@@ -227,6 +227,39 @@ class ClaimsAPI(test_api.ReportAPI):
             self.request("POST", f"/claims/{claim['id']}/handover", token=staff)[0], 200
         )
 
+    def test_claim_owner_assignment_preserves_workflow(self):
+        import subprocess
+        import sys
+
+        item, claim, student = self.scenario("assignment")
+
+        def assign(email):
+            return subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "app.cli",
+                    "assign-owner",
+                    "--item-id",
+                    str(item["id"]),
+                    "--email",
+                    email,
+                ],
+                env=self.environment,
+                capture_output=True,
+                text=True,
+            )
+
+        result = assign("assignment@example.org")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(
+            self.request("GET", f"/items/{item['id']}")[1]["reporter_id"], self.user_id
+        )
+        self.request("POST", f"/claims/{claim['id']}/withdraw", token=student)
+        self.request("POST", f"/items/{item['id']}/archive")
+        result = assign("tester@example.org")
+        self.assertNotEqual(result.returncode, 0)
+
     def test_claim_duplicate_submission_race(self):
         _, student = self.account("duplicate-race")
         item = self.request("POST", "/items", {**test_api.REPORT, "type": "found"})[1]

@@ -37,7 +37,7 @@ Phase 6 keeps ownership evidence outside public report responses. Claim reads ar
 
 Claim evidence is sensitive stored text, not encrypted application data. Trusted machine/database administrators can read it. Define retention, encryption, backups, account verification, and claim submission quotas before real campus use. Approval records a human decision rather than proving physical ownership.
 
-41 tests cover CRUD, search, persistence, constraints, migration consistency and ID preservation, request guards, account/password validation, expired/tampered/invalid JWTs, deleted accounts, forged role claims, anonymous and cross-user access, staff moderation, immediate role changes, legacy ownership assignment, bounded authentication resources, claim privacy and transitions, simultaneous approval/submission, handover, archival, and claim persistence after restart. Security headers also cover early guard rejections.
+42 tests cover CRUD, search, persistence, constraints, migration consistency and ID preservation, request guards, account/password validation, expired/tampered/invalid JWTs, deleted accounts, forged role claims, anonymous and cross-user access, staff moderation, immediate role changes, legacy ownership assignment, bounded authentication resources, claim privacy and transitions, simultaneous approval/submission, handover, archival, and claim persistence after restart, and rejected ownership reassignment to claimants or archived reports. Security headers also cover early guard rejections.
 
 An Edge browser check against an isolated database verified Swagger OAuth2 login, authenticated report creation, rendered account profile, persisted owner updates, public reads, anonymous 401 responses, and cross-user 403 responses.
 

@@ -117,7 +117,7 @@ Local administration (requires trusted access to the server and database):
 .\.venv\Scripts\python.exe -m app.cli assign-owner --item-id 1 --email student@example.org
 ```
 
-Staff creation prompts for a password privately. Use `--role student` to demote an account. Assign legacy reports only after verifying their owner; matching display names is insufficient. Email verification, password reset, refresh tokens, and per-token revocation are deferred.
+Staff creation prompts for a password privately. Use `--role student` to demote an account. Assign legacy reports only after verifying their owner; matching display names is insufficient. Ownership reassignment is serialized with the claim workflow and rejects archived reports or a target account with claim history on that report. Email verification, password reset, refresh tokens, and per-token revocation are deferred.
 
 ## Report API
 

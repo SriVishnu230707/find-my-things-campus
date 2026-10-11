@@ -6,15 +6,17 @@ import secrets
 from datetime import datetime, timezone
 from getpass import getpass
 
+from fastapi import HTTPException
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import engine, verify_database
-from app.models.items import Item
+from app.models.claims import Claim
 from app.models.users import User
 from app.schemas.users import UserRegister, normalize_email
 from app.security import SECRET_FILE, hash_password
+from app.services.claims import lock_item
 
 
 def main():
@@ -79,9 +81,21 @@ def main():
                 user.role = args.role
                 user.updated_at = datetime.now(timezone.utc)
             else:
-                item = session.get(Item, args.item_id)
-                if item is None:
+                try:
+                    item = lock_item(session, args.item_id)
+                except HTTPException:
                     parser.error("Report not found")
+                if item.archived:
+                    parser.error("Archived reports cannot be reassigned")
+                if (
+                    session.scalar(
+                        select(Claim.id)
+                        .where(Claim.item_id == item.id, Claim.claimant_id == user.id)
+                        .limit(1)
+                    )
+                    is not None
+                ):
+                    parser.error("A claimant cannot become the report owner")
                 item.reporter_id = user.id
                 item.reported_by = user.display_name
                 item.updated_at = datetime.now(timezone.utc)
