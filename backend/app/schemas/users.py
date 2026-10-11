@@ -1,7 +1,10 @@
 """Public account contracts with no password-hash fields."""
+
 from datetime import datetime
 from typing import Annotated, Literal
+
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr, field_validator
+
 from app.schemas.items import InputModel, Reporter
 
 

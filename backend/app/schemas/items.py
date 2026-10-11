@@ -21,8 +21,9 @@ class InputModel(BaseModel):
     @field_validator("*", mode="before")
     @classmethod
     def safe_text(cls, value):
-        if isinstance(value, str) and ("\x00" in value or
-                any(0xD800 <= ord(char) <= 0xDFFF for char in value)):
+        if isinstance(value, str) and (
+            "\x00" in value or any(0xD800 <= ord(char) <= 0xDFFF for char in value)
+        ):
             raise ValueError("Text contains an invalid Unicode or NUL character")
         return value
 
@@ -64,7 +65,9 @@ class ItemUpdate(InputModel):
 
 
 class ItemRead(ItemCreate):
-    model_config = ConfigDict(from_attributes=True, str_strip_whitespace=True, extra="forbid")
+    model_config = ConfigDict(
+        from_attributes=True, str_strip_whitespace=True, extra="forbid"
+    )
     id: int
     reported_by: Reporter
     reporter_id: int | None

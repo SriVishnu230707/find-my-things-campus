@@ -1,7 +1,9 @@
 """Bounded process-local throttling for the local prototype's auth endpoints."""
+
 from collections import OrderedDict, deque
 from threading import Lock
 from time import monotonic
+
 from fastapi import HTTPException, Request
 
 
@@ -34,4 +36,6 @@ limiter = AuthLimiter()
 def auth_guard(request: Request):
     client = request.client.host if request.client else "unknown"
     if not limiter.allow(client):
-        raise HTTPException(429, "Too many authentication requests", headers={"Retry-After": "60"})
+        raise HTTPException(
+            429, "Too many authentication requests", headers={"Retry-After": "60"}
+        )

@@ -1,9 +1,13 @@
 """Persistent report model and database-level constraints."""
+
 from datetime import datetime, timezone
-from sqlalchemy import CheckConstraint, DateTime, Integer, String, Index, ForeignKey
+
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import TypeDecorator
+
 from app.database import Base
+
 
 class UTCDateTime(TypeDecorator):
     impl = DateTime(timezone=True)
@@ -18,21 +22,40 @@ class UTCDateTime(TypeDecorator):
 
     def process_result_value(self, value, dialect):
         if value is not None:
-            return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+            return (
+                value.replace(tzinfo=timezone.utc)
+                if value.tzinfo is None
+                else value.astimezone(timezone.utc)
+            )
         return value
+
 
 class Item(Base):
     __tablename__ = "items"
     __table_args__ = (
         Index("ix_items_created_id", "created_at", "id"),
-        Index("ix_items_category_type_status_created_id", "category", "type", "status", "created_at", "id"),
+        Index(
+            "ix_items_category_type_status_created_id",
+            "category",
+            "type",
+            "status",
+            "created_at",
+            "id",
+        ),
         CheckConstraint("type IN ('lost', 'found')", name="ck_items_type"),
         CheckConstraint("status IN ('open', 'resolved')", name="ck_items_status"),
-        CheckConstraint("category IN ('electronics', 'clothing', 'documents', 'accessories', 'other')", name="ck_items_category"),
+        CheckConstraint(
+            "category IN ('electronics', 'clothing', 'documents', 'accessories', 'other')",
+            name="ck_items_category",
+        ),
         CheckConstraint("length(title) BETWEEN 3 AND 120", name="ck_items_title"),
-        CheckConstraint("length(description) BETWEEN 10 AND 2000", name="ck_items_description"),
+        CheckConstraint(
+            "length(description) BETWEEN 10 AND 2000", name="ck_items_description"
+        ),
         CheckConstraint("length(location) BETWEEN 2 AND 150", name="ck_items_location"),
-        CheckConstraint("length(reported_by) BETWEEN 2 AND 100", name="ck_items_reporter"),
+        CheckConstraint(
+            "length(reported_by) BETWEEN 2 AND 100", name="ck_items_reporter"
+        ),
         {"sqlite_autoincrement": True},
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -43,7 +66,9 @@ class Item(Base):
     type: Mapped[str] = mapped_column(String(10))
     reported_by: Mapped[str] = mapped_column(String(100))
     reporter_id: Mapped[int | None] = mapped_column(
-        ForeignKey("users.id", ondelete="RESTRICT", name="fk_items_reporter_id_users"), index=True)
+        ForeignKey("users.id", ondelete="RESTRICT", name="fk_items_reporter_id_users"),
+        index=True,
+    )
     status: Mapped[str] = mapped_column(String(10))
     created_at: Mapped[datetime] = mapped_column(UTCDateTime())
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime())

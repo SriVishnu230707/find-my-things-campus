@@ -1,15 +1,18 @@
 """Local administration: never expose these commands as public API routes."""
+
 import argparse
-from datetime import datetime, timezone
-from getpass import getpass
 import os
 import secrets
+from datetime import datetime, timezone
+from getpass import getpass
+
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from pydantic import ValidationError
+
 from app.database import engine, verify_database
-from app.models.users import User
 from app.models.items import Item
+from app.models.users import User
 from app.schemas.users import UserRegister, normalize_email
 from app.security import SECRET_FILE, hash_password
 
@@ -32,13 +35,17 @@ def main():
         if args.command == "init-secret":
             SECRET_FILE.parent.mkdir(parents=True, exist_ok=True)
             try:
-                descriptor = os.open(SECRET_FILE, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                descriptor = os.open(
+                    SECRET_FILE, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600
+                )
             except FileExistsError:
                 print("Signing secret already exists; kept unchanged.")
                 return
             with os.fdopen(descriptor, "w", encoding="utf-8") as output:
                 output.write(secrets.token_urlsafe(48))
-            print("Created local signing secret; keep backend/data/auth.secret private.")
+            print(
+                "Created local signing secret; keep backend/data/auth.secret private."
+            )
             return
         verify_database(engine)
         with Session(engine) as session:
@@ -46,15 +53,26 @@ def main():
             user = session.scalar(select(User).where(User.email == email))
             if args.command == "create-staff":
                 if user is not None:
-                    parser.error("Email already exists; use set-role for an existing account")
+                    parser.error(
+                        "Email already exists; use set-role for an existing account"
+                    )
                 password = getpass("Password (12–128 characters): ")
                 if password != getpass("Confirm password: "):
                     parser.error("Passwords do not match")
-                data = UserRegister(email=email, display_name=args.name, password=password)
+                data = UserRegister(
+                    email=email, display_name=args.name, password=password
+                )
                 now = datetime.now(timezone.utc)
-                session.add(User(email=data.email, display_name=data.display_name,
-                                 password_hash=hash_password(data.password.get_secret_value()),
-                                 role="staff", created_at=now, updated_at=now))
+                session.add(
+                    User(
+                        email=data.email,
+                        display_name=data.display_name,
+                        password_hash=hash_password(data.password.get_secret_value()),
+                        role="staff",
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
             elif user is None:
                 parser.error("Account not found")
             elif args.command == "set-role":
@@ -70,7 +88,10 @@ def main():
             session.commit()
             print("Account/report administration completed.")
     except ValidationError as error:
-        parser.error("Invalid account details: " + "; ".join(issue["msg"] for issue in error.errors()))
+        parser.error(
+            "Invalid account details: "
+            + "; ".join(issue["msg"] for issue in error.errors())
+        )
     finally:
         engine.dispose()
 

@@ -3,12 +3,12 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
-
-from app.schemas.items import ItemCreate, ItemRead, ItemUpdate, ItemQuery
 from sqlalchemy.orm import Session
-from app.database import get_session
-from app.services.items import ItemRepository
+
 from app.auth import CurrentUser
+from app.database import get_session
+from app.schemas.items import ItemCreate, ItemQuery, ItemRead, ItemUpdate
+from app.services.items import ItemRepository
 
 router = APIRouter(prefix="/items", tags=["Reports"])
 ItemID = Annotated[int, Path(gt=0, le=2**63 - 1)]
@@ -22,7 +22,9 @@ Store = Annotated[ItemRepository, Depends(get_store)]
 
 
 @router.post("", response_model=ItemRead, status_code=status.HTTP_201_CREATED)
-def create_item(data: ItemCreate, store: Store, response: Response, user: CurrentUser) -> ItemRead:
+def create_item(
+    data: ItemCreate, store: Store, response: Response, user: CurrentUser
+) -> ItemRead:
     item = store.create(data, user)
     response.headers["Location"] = f"/items/{item.id}"
     return item
@@ -43,7 +45,9 @@ def get_item(item_id: ItemID, store: Store) -> ItemRead:
 
 
 @router.patch("/{item_id}", response_model=ItemRead)
-def update_item(item_id: ItemID, data: ItemUpdate, store: Store, user: CurrentUser) -> ItemRead:
+def update_item(
+    item_id: ItemID, data: ItemUpdate, store: Store, user: CurrentUser
+) -> ItemRead:
     check_permission(item_id, store, user)
     item = store.update(item_id, data, user)
     if item is None:

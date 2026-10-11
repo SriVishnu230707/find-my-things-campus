@@ -1,21 +1,21 @@
 """Application entry point: uvicorn app.main:app."""
 
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
-from fastapi.responses import RedirectResponse
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
+from sqlalchemy.exc import SQLAlchemyError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from app.database import engine, verify_database
 from app.middleware import RequestGuards
-
+from app.routers.auth import router as auth_router
 from app.routers.health import router as health_router
 from app.routers.items import router as items_router
-from app.routers.auth import router as auth_router
-from app.security import signing_secret, dummy_hash
-from contextlib import asynccontextmanager
-import logging
-from sqlalchemy.exc import SQLAlchemyError
-from app.database import engine, verify_database
+from app.security import dummy_hash, signing_secret
+
 
 @asynccontextmanager
 async def lifespan(app):
@@ -23,12 +23,15 @@ async def lifespan(app):
         try:
             verify_database(engine)
         except SQLAlchemyError:
-            raise RuntimeError("Database unavailable or not migrated; run alembic upgrade head") from None
+            raise RuntimeError(
+                "Database unavailable or not migrated; run alembic upgrade head"
+            ) from None
         signing_secret()
         dummy_hash()
         yield
     finally:
         engine.dispose()
+
 
 app = FastAPI(
     title="Campus Lost-and-Found API",
@@ -42,17 +45,24 @@ app.include_router(health_router)
 app.include_router(items_router)
 app.include_router(auth_router)
 
+
 @app.exception_handler(SQLAlchemyError)
 async def database_error(request, error):
-    logging.getLogger(__name__).error("Database operation failed (%s)", type(error).__name__)
-    return JSONResponse(status_code=503, content={"detail": "Database temporarily unavailable"})
+    logging.getLogger(__name__).error(
+        "Database operation failed (%s)", type(error).__name__
+    )
+    return JSONResponse(
+        status_code=503, content={"detail": "Database temporarily unavailable"}
+    )
 
 
 @app.exception_handler(RequestValidationError)
 async def validation_error(request, error: RequestValidationError):
     # Do not echo submitted personal information or arbitrarily large inputs.
-    details = [{key: value for key, value in issue.items()
-                if key in {"type", "loc", "msg"}} for issue in error.errors()]
+    details = [
+        {key: value for key, value in issue.items() if key in {"type", "loc", "msg"}}
+        for issue in error.errors()
+    ]
     return JSONResponse(status_code=422, content={"detail": details})
 
 

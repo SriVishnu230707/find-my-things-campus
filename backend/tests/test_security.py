@@ -1,13 +1,16 @@
 """Local rate-limit, signing configuration, and hash-safety checks."""
-from pathlib import Path
+
 import os
 import sys
 import unittest
+from pathlib import Path
 from unittest.mock import patch
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app.auth_limits import AuthLimiter
-from app.security import signing_secret, hash_slots, hash_password
 from fastapi import HTTPException
+
+from app.auth_limits import AuthLimiter
+from app.security import hash_password, hash_slots, signing_secret
 
 
 class SecurityTests(unittest.TestCase):

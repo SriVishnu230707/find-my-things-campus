@@ -1,4 +1,4 @@
-"""Limits for the local, unauthenticated prototype."""
+"""Request limits and browser guards for the local API."""
 
 from starlette.responses import JSONResponse
 
@@ -29,7 +29,9 @@ class RequestGuards:
         if scope["method"] in {"POST", "PATCH", "PUT", "DELETE"}:
             origin = headers.get(b"origin")
             if origin is not None and origin.decode("latin-1") not in LOCAL_ORIGINS:
-                await JSONResponse({"detail": "Untrusted browser origin"}, 403)(scope, receive, send)
+                await JSONResponse({"detail": "Untrusted browser origin"}, 403)(
+                    scope, receive, send
+                )
                 return
         # Count actual streamed bytes, including chunked requests. Do not rely
         # on Content-Length, and stop before FastAPI parses an oversized JSON body.
@@ -42,7 +44,9 @@ class RequestGuards:
             chunk = message.get("body", b"")
             size += len(chunk)
             if size > MAX_BODY_BYTES:
-                await JSONResponse({"detail": "Request body exceeds 16 KiB"}, 413)(scope, receive, send)
+                await JSONResponse({"detail": "Request body exceeds 16 KiB"}, 413)(
+                    scope, receive, send
+                )
                 return
             chunks.append(chunk)
             if not message.get("more_body", False):
