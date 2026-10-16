@@ -235,6 +235,23 @@ class ReportAPI(unittest.TestCase):
             for value in ["abc", "0", "-1", str(2**63)]:
                 self.assertEqual(self.request(method, f"/items/{value}", body)[0], 422)
 
+    def test_student_website_and_owned_report_listing(self):
+        code, html, headers = self.raw_request("GET", "/campus/")
+        self.assertEqual(code, 200)
+        self.assertIn(b"find my things", html)
+        self.assertIn("text/html", headers["content-type"])
+        self.assertIn("script-src 'self'", headers["content-security-policy"])
+        self.assertEqual(self.raw_request("GET", "/campus/app.js")[0], 200)
+        self.assertEqual(self.raw_request("GET", "/campus/styles.css")[0], 200)
+        self.assertEqual(self.request("GET", "/items/mine", token=None)[0], 401)
+        _, other = self.account("website-other")
+        own = self.request("POST", "/items", REPORT)[1]
+        self.request("POST", "/items", REPORT, token=other)
+        rows = self.request("GET", "/items/mine?limit=1")[1]
+        self.assertEqual([row["id"] for row in rows], [own["id"]])
+        self.assertEqual(self.request("GET", "/items/mine?offset=1")[1], [])
+        self.assertEqual(self.request("GET", "/items/mine?q=nomatch")[1], [])
+
     def test_health_and_documentation(self):
         self.assertEqual(self.request("GET", "/health")[:2], (200, {"status": "ok"}))
         schema = self.request("GET", "/openapi.json")[1]

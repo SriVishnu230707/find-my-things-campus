@@ -1,6 +1,16 @@
 # Campus Lost-and-Found API
 
-Phase 6 adds private item claims, review, handover confirmation, and report archival to the authenticated searchable API.
+Phase 7 adds a responsive student website connected to the authenticated reports and claims API.
+
+## Student website
+
+Open [Find My Things](http://127.0.0.1:8000/campus/) after starting the server. The website is served by FastAPI at the same origin as the API; no separate frontend server, JavaScript build, or CORS changes are needed. Swagger remains at `/docs`, and `/` continues to redirect there for compatibility.
+
+The noticeboard supports keyword/location search, categories, lost/found and status filters, sorting, archival filtering, and pagination. Sign in or create a student account to post/edit reports, access **My reports** and **My claims**, or submit private evidence. Report owners and staff can review claims from report details, approve/reject, confirm physical handover, and archive reports. Destructive actions require a confirmation dialog; workflow conflicts are shown as readable errors.
+
+The frontend uses HTML, CSS, and browser JavaScript in `backend/app/web/`. These assets are included in the Python package. Requests use relative API URLs, and report/evidence text is rendered as text rather than HTML. JWTs stay in memory: refreshing the page signs you out, and signing out clears the personal workspace. Tokens already copied elsewhere remain valid until expiry. There is no password reset or photo upload yet.
+
+`GET /items/mine` is authenticated and filters by the current account before applying the same report filters and pagination as `/items`. It never accepts a client-supplied owner ID. This phase adds no database migration or runtime dependencies.
 
 ## Requirements
 
@@ -67,7 +77,7 @@ backend/
   pyproject.toml     Package metadata and pinned direct dependencies
 ```
 
-Dependencies: FastAPI 0.142.2, Pydantic 2.13.5, Uvicorn 0.53.0, SQLAlchemy 2.1.2, Alembic 1.20.0, argon2-cffi 25.1.0, PyJWT 2.15.1, python-multipart 0.0.32, email-validator 2.3.0. Application version: `0.6.0`. The lockfile pins transitive dependencies too.
+Dependencies: FastAPI 0.142.2, Pydantic 2.13.5, Uvicorn 0.53.0, SQLAlchemy 2.1.2, Alembic 1.20.0, argon2-cffi 25.1.0, PyJWT 2.15.1, python-multipart 0.0.32, email-validator 2.3.0. Application version: `0.7.0`. The lockfile pins transitive dependencies too.
 
 ## Private claims and handover
 

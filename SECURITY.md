@@ -1,6 +1,6 @@
-# Security review through Phase 6
+# Security review through Phase 7
 
-Reviewed 11 October 2026. This is a local learning prototype, not a campus production service.
+Updated 16 October 2026. This is a local learning prototype, not a campus production service.
 
 ## Fixed findings
 
@@ -28,7 +28,7 @@ Responses processed by the request guard also receive `Cache-Control: no-store` 
 - **Administration:** anyone with trusted server/database access can create staff or reassign reports through the CLI. Protect that machine, the signing secret, database, and backups. Legacy reports have no owner and remain staff-only until explicitly assigned after verification.
 - **Persistence and integrity:** Phase 3 adds durable SQLite transactions, shared file storage, database constraints, and rollback. Partial updates change only supplied columns. Concurrent edits to the same field remain last-write-wins; later editing workflows may need version checks. Backups are required to recover accidental or unauthorized deletion.
 - **Privacy:** report lists expose reporter display names and locations to all API callers. Establish visibility, retention, and private claim-evidence rules before real campus use.
-- **Future frontend:** report text is plain JSON data, not trusted HTML. Render it as text; do not insert it through raw HTML APIs. No student-facing HTML renderer exists yet.
+- **Frontend:** report text and claim evidence are inserted with DOM text APIs, never raw HTML. Tokens are kept in memory, with no local/session storage persistence. Refreshing signs out; logout clears personal results. This reduces persistence of credentials but cannot defend a live page against compromised same-origin scripts. The website is served on the API origin, retaining Host/Origin guards.
 - Local Host/Origin policy intentionally targets localhost:8000. Deployment and a future frontend require explicit policy configuration, HTTPS, and real access control. Do not widen the allowlist to `*` as a shortcut.
 
 ## Verification
@@ -37,10 +37,12 @@ Phase 6 keeps ownership evidence outside public report responses. Claim reads ar
 
 Claim evidence is sensitive stored text, not encrypted application data. Trusted machine/database administrators can read it. Define retention, encryption, backups, account verification, and claim submission quotas before real campus use. Approval records a human decision rather than proving physical ownership.
 
-42 tests cover CRUD, search, persistence, constraints, migration consistency and ID preservation, request guards, account/password validation, expired/tampered/invalid JWTs, deleted accounts, forged role claims, anonymous and cross-user access, staff moderation, immediate role changes, legacy ownership assignment, bounded authentication resources, claim privacy and transitions, simultaneous approval/submission, handover, archival, and claim persistence after restart, and rejected ownership reassignment to claimants or archived reports. Security headers also cover early guard rejections.
+43 tests cover CRUD, search, persistence, constraints, migration consistency and ID preservation, request guards, account/password validation, expired/tampered/invalid JWTs, deleted accounts, forged role claims, anonymous and cross-user access, staff moderation, immediate role changes, legacy ownership assignment, bounded authentication resources, claim privacy and transitions, simultaneous approval/submission, handover, archival, and claim persistence after restart, website assets/security headers, authenticated own-report filtering before pagination, and rejected ownership reassignment to claimants or archived reports. Security headers also cover early guard rejections.
 
 An Edge browser check against an isolated database verified Swagger OAuth2 login, authenticated report creation, rendered account profile, persisted owner updates, public reads, anonymous 401 responses, and cross-user 403 responses.
 
 Phase 6 browser verification additionally covered Swagger claim submission and evidence rendering, private review denial, approval, persisted handover/resolution, deletion conflicts, and successful archival.
 
 All 26 pinned packages were queried against OSV on 11 October 2026; no matching advisories were returned. An audit is a database snapshot, not proof that dependencies are vulnerability-free. Repeat after dependency changes.
+
+Phase 7 Edge verification exercised registration, report creation, personal reports, search, private claims, review, approval, handover, archival filters, report edits/deletion confirmations, safe rendering of HTML-like titles, signout privacy, and mobile layout. Website responses include a Content Security Policy restricting scripts and styles to this origin and blocking embedding.

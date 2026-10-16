@@ -36,6 +36,14 @@ def list_items(store: Store, filters: Annotated[ItemQuery, Query()]) -> list[Ite
     return store.list(filters)
 
 
+@router.get("/mine", response_model=list[ItemRead])
+def my_items(
+    store: Store, filters: Annotated[ItemQuery, Query()], user: CurrentUser
+) -> list[ItemRead]:
+    """Filter by the authenticated owner before pagination."""
+    return store.list(filters, owner_id=user.id)
+
+
 @router.get("/{item_id}", response_model=ItemRead)
 def get_item(item_id: ItemID, store: Store) -> ItemRead:
     item = store.get(item_id)

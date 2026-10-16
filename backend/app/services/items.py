@@ -32,9 +32,13 @@ class ItemRepository:
         self.session.commit()
         return result
 
-    def list(self, filters: ItemQuery | None = None) -> list[ItemRead]:
+    def list(
+        self, filters: ItemQuery | None = None, owner_id: int | None = None
+    ) -> list[ItemRead]:
         filters = filters or ItemQuery()
         statement = select(Item).where(Item.archived == filters.archived)
+        if owner_id is not None:
+            statement = statement.where(Item.reporter_id == owner_id)
         if filters.q is not None:
             statement = statement.where(
                 or_(

@@ -22,6 +22,13 @@ class RequestGuards:
                     (b"x-content-type-options", b"nosniff"),
                     (b"cache-control", b"no-store"),
                 ]
+                if scope["path"].startswith("/campus/"):
+                    message["headers"].append(
+                        (
+                            b"content-security-policy",
+                            b"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+                        )
+                    )
             await original_send(message)
 
         send = guarded_send

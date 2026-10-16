@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "campus-lost-and-found-api"
-version = "0.6.0"
-description = "Campus Lost-and-Found API — Phase 6 private claims and handover"
+version = "0.7.0"
+description = "Campus Lost-and-Found — Phase 7 student website"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi==0.142.2",
@@ -21,6 +21,9 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 include = ["app*"]
+
+[tool.setuptools.package-data]
+app = ["web/*.html", "web/*.css", "web/*.js"]
 
 [tool.ruff]
 target-version = "py312"

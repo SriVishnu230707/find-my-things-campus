@@ -2,10 +2,12 @@
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -37,7 +39,7 @@ async def lifespan(app):
 app = FastAPI(
     title="Campus Lost-and-Found API",
     description="Browse campus reports. Sign in to create reports and manage your own; staff can moderate.",
-    version="0.6.0",
+    version="0.7.0",
     lifespan=lifespan,
 )
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1"])
@@ -46,6 +48,11 @@ app.include_router(health_router)
 app.include_router(items_router)
 app.include_router(auth_router)
 app.include_router(claims_router)
+app.mount(
+    "/campus",
+    StaticFiles(directory=Path(__file__).parent / "web", html=True),
+    name="campus",
+)
 
 
 @app.exception_handler(SQLAlchemyError)
