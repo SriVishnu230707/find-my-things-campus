@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 
 from fastapi import HTTPException
 from sqlalchemy import select, update
-from sqlalchemy.exc import IntegrityError
 
 from app.models.claims import Claim
 from app.models.items import Item
@@ -48,6 +47,16 @@ def create_claim(session, item_id, user, evidence):
         )
     ):
         raise HTTPException(409, "Item already reserved or returned")
+    # The shared report lock makes this check atomic with the subsequent insert.
+    # Unexpected integrity/storage failures must reach the generic 503 handler.
+    if session.scalar(
+        select(Claim.id).where(
+            Claim.item_id == item_id,
+            Claim.claimant_id == user.id,
+            Claim.status.in_(["pending", "approved"]),
+        )
+    ):
+        raise HTTPException(409, "An active claim already exists")
     now = datetime.now(timezone.utc)
     claim = Claim(
         item_id=item_id,
@@ -58,11 +67,7 @@ def create_claim(session, item_id, user, evidence):
         updated_at=now,
     )
     session.add(claim)
-    try:
-        session.flush()
-    except IntegrityError:
-        session.rollback()
-        raise HTTPException(409, "An active claim already exists") from None
+    session.flush()
     notify(
         session,
         reviewers(session, item),

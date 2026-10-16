@@ -220,7 +220,10 @@ async function load() {
     empty('A little space of your own.', 'Sign in to see your reports and private claims.', button('Sign in', () => authForm(), 'button dark')); return;
   }
   const params = new URLSearchParams();
-  if (['browse', 'reports'].includes(state.view)) for (const [key, value] of new FormData($('#filters'))) if (value && key !== 'archived') params.set(key, String(value).trim());
+  if (['browse', 'reports'].includes(state.view)) for (const [key, value] of new FormData($('#filters'))) {
+    const trimmed = String(value).trim();
+    if (trimmed && key !== 'archived') params.set(key, trimmed);
+  }
   if (['browse', 'reports'].includes(state.view)) params.set('archived', String($('#filters [name=archived]').checked));
   if (state.view === 'notifications') params.set('unread_only', String($('#unread-only').checked));
   params.set('limit', pageSize); params.set('offset', state.page * pageSize);

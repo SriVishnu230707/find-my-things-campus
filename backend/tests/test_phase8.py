@@ -204,6 +204,49 @@ class Phase8API(test_api.ReportAPI):
         )
         self.assertEqual(len(self.request("GET", "/notifications")[1]), 1)
 
+    def test_phase8_claim_storage_failure_is_not_a_duplicate(self):
+        _, student = self.account("claim-storage-failure")
+        item = self.request("POST", "/items", {**test_api.REPORT, "type": "found"})[1]
+        database = Path(self.directory.name) / "test.db"
+        with closing(sqlite3.connect(database)) as connection:
+            connection.execute(
+                "CREATE TRIGGER fail_claim_write BEFORE INSERT ON claims BEGIN SELECT RAISE(ABORT, 'test storage failure'); END"
+            )
+            connection.commit()
+        try:
+            code, body, _ = self.request(
+                "POST",
+                f"/items/{item['id']}/claims",
+                {"evidence": "Private identifying details"},
+                token=student,
+            )
+            self.assertEqual(code, 503)
+            self.assertEqual(body["detail"], "Database temporarily unavailable")
+            self.assertEqual(self.request("GET", "/claims/me", token=student)[1], [])
+            self.assertEqual(self.request("GET", "/notifications")[1], [])
+        finally:
+            with closing(sqlite3.connect(database)) as connection:
+                connection.execute("DROP TRIGGER fail_claim_write")
+                connection.commit()
+        self.assertEqual(
+            self.request(
+                "POST",
+                f"/items/{item['id']}/claims",
+                {"evidence": "Private identifying details"},
+                token=student,
+            )[0],
+            201,
+        )
+        self.assertEqual(
+            self.request(
+                "POST",
+                f"/items/{item['id']}/claims",
+                {"evidence": "Private identifying details"},
+                token=student,
+            )[0],
+            409,
+        )
+
     def test_phase8_staff_receives_legacy_report_claims(self):
         import subprocess
         import sys
