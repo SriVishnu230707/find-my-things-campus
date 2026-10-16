@@ -71,9 +71,11 @@
       <button class="tab active" data-view="browse" aria-current="page">All reports</button>
       <button class="tab" data-view="reports">My reports</button>
       <button class="tab" data-view="claims">My claims</button>
+        <button class="tab" data-view="notifications">Notifications <span id="notification-count" class="notification-count" hidden>0</span></button>
     </nav>
 
-    <form id="filters" class="filters">
+      <div id="inbox-tools" class="actions" hidden><button id="read-all" class="button subtle" type="button">Mark all as read</button><button id="refresh-notifications" class="button subtle" type="button">Refresh notifications</button><label class="archive-toggle"><input id="unread-only" type="checkbox"> Unread only</label></div>
+      <form id="filters" class="filters">
       <label class="search">
         <span aria-hidden="true">⌕</span>
         <input name="q" aria-label="Search reports" placeholder="Search for a charger, wallet, keys…" maxlength="120">

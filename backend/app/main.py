@@ -17,6 +17,8 @@ from app.routers.auth import router as auth_router
 from app.routers.claims import router as claims_router
 from app.routers.health import router as health_router
 from app.routers.items import router as items_router
+from app.routers.media import router as media_router
+from app.routers.notifications import router as notifications_router
 from app.security import dummy_hash, signing_secret
 
 
@@ -39,7 +41,7 @@ async def lifespan(app):
 app = FastAPI(
     title="Campus Lost-and-Found API",
     description="Browse campus reports. Sign in to create reports and manage your own; staff can moderate.",
-    version="0.7.0",
+    version="0.8.0",
     lifespan=lifespan,
 )
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1"])
@@ -48,6 +50,8 @@ app.include_router(health_router)
 app.include_router(items_router)
 app.include_router(auth_router)
 app.include_router(claims_router)
+app.include_router(media_router)
+app.include_router(notifications_router)
 app.mount(
     "/campus",
     StaticFiles(directory=Path(__file__).parent / "web", html=True),

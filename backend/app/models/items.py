@@ -79,6 +79,16 @@ class Item(Base):
         index=True,
     )
     status: Mapped[str] = mapped_column(String(10))
+    photo_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
+    @property
+    def photo_url(self) -> str | None:
+        return (
+            f"/items/{self.id}/photo?v={self.photo_version}"
+            if self.photo_version
+            else None
+        )
+
     archived: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=false()
     )

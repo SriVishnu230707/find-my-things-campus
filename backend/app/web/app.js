@@ -2,6 +2,7 @@
 const $ = (selector, root = document) => root.querySelector(selector);
 const state = { token: null, user: null, view: 'browse', page: 0, generation: 0 };
 const pageSize = 12;
+let notificationPolling = false;
 const modal = $('#modal');
 let modalGeneration = 0;
 const symbols = { electronics: '⌁', clothing: '♧', documents: '▤', accessories: '◇', other: '✳' };
@@ -77,20 +78,40 @@ function setAccount() {
   $('#user-label').textContent = state.user ? `${state.user.display_name}${state.user.role === 'staff' ? ' · staff' : ''}` : '';
   $('#login-button').hidden = !!state.user;
   $('#logout-button').hidden = !state.user;
+  $('#notification-count').hidden = true;
+  $('#notification-count').textContent = '0';
+  if (state.user) refreshNotificationCount();
+}
+async function refreshNotificationCount() {
+  if (!state.token || notificationPolling) return;
+  const token = state.token; notificationPolling = true;
+  try {
+    const data = await api('/notifications/unread-count');
+    if (state.token !== token) return;
+    const badge = $('#notification-count'); badge.textContent = String(data.unread_count); badge.hidden = data.unread_count === 0;
+  } catch { /* Inbox errors remain retryable through the notifications view. */ }
+  finally { notificationPolling = false; }
 }
 async function api(path, { method = 'GET', body, form = false } = {}) {
   const requestToken = state.token;
   const headers = {};
   if (state.token) headers.Authorization = `Bearer ${state.token}`;
-  if (body !== undefined) headers['Content-Type'] = form ? 'application/x-www-form-urlencoded' : 'application/json';
+  const multipart = body instanceof FormData;
+  if (body !== undefined && !multipart) headers['Content-Type'] = form ? 'application/x-www-form-urlencoded' : 'application/json';
   let response;
-  try { response = await fetch(path, { method, headers, body: body === undefined ? undefined : form ? new URLSearchParams(body) : JSON.stringify(body) }); }
+  try { response = await fetch(path, { method, headers, body: body === undefined ? undefined : multipart ? body : form ? new URLSearchParams(body) : JSON.stringify(body) }); }
   catch { throw new Error('Unable to connect. Check your connection and try again.'); }
   const result = response.status === 204 ? null : await response.json();
   if (!response.ok) {
     if (response.status === 401 && state.token && state.token === requestToken) {
+      ++state.generation;
       state.token = null; state.user = null; setAccount();
+      modal.close();
       $('#results').replaceChildren();
+      $('#results').setAttribute('aria-busy', 'false');
+      $('#results-label').textContent = 'Sign in to continue';
+      $('#inbox-tools').hidden = true;
+      $('#previous').disabled = true; $('#next').disabled = true;
       notice('Your session expired. Sign in again to continue.', true);
     }
     const details = Array.isArray(result?.detail) ? result.detail.map(e => `${e.loc.filter(x => !['body', 'query'].includes(x)).join('.')}: ${e.msg}`).join(' · ') : result?.detail;
@@ -149,16 +170,34 @@ function reportForm(item = null) {
   if (!requireAccount()) return;
   const body = openModal(item ? 'Edit your report' : 'Report an item');
   const form = node('form', undefined, 'form-stack'); body.append(form);
+  let savedItem = item;
   field(form, 'Title', 'title', { value: item?.title, min: 3, max: 120 });
   field(form, 'Description', 'description', { type: 'textarea', value: item?.description, min: 10, max: 2000 });
   field(form, 'Location', 'location', { value: item?.location, min: 2, max: 150 });
   field(form, 'Category', 'category', { value: item?.category || 'electronics', options: Object.keys(symbols) });
   field(form, 'Report type', 'type', { value: item?.type || 'lost', options: ['lost', 'found'] });
-  body.append(node('p', 'Describe the item clearly. Keep contact information and private identifying details out of public reports.', 'hint'));
+  const photoInput = field(form, 'Photo (optional · JPEG or PNG · up to 2 MiB)', 'photo', { type: 'file', required: false });
+  photoInput.accept = 'image/jpeg,image/png';
+  const preview = node('img', undefined, 'photo-preview'); preview.alt = 'Selected photo preview'; preview.hidden = true; form.append(preview);
+  if (item?.photo_url) { preview.src = item.photo_url; preview.alt = 'Current report photo'; preview.hidden = false; }
+  photoInput.addEventListener('change', () => {
+    const file = photoInput.files[0]; notice('', false, true);
+    if (!file) { preview.hidden = true; preview.removeAttribute('src'); return; }
+    if (file.size > 2 * 1024 * 1024 || !['image/jpeg', 'image/png'].includes(file.type)) {
+      photoInput.value = ''; preview.hidden = true; preview.removeAttribute('src'); notice('Choose a JPEG or PNG photo no larger than 2 MiB.', true, true); return;
+    }
+    const reader = new FileReader(); reader.onload = () => { if (!photoInput.isConnected || photoInput.files[0] !== file) return; preview.src = reader.result; preview.alt = 'Selected photo preview'; preview.hidden = false; }; reader.readAsDataURL(file);
+  });
+  body.append(node('p', 'Reports and photos are public. Describe the item clearly, and keep contact information, identity documents, and private identifying details out of photos and descriptions.', 'hint'));
   wireForm(form, async data => {
-    if (item) for (const key of Object.keys(data)) if (data[key] === item[key]) delete data[key];
-    if (item && !Object.keys(data).length) { modal.close(); return; }
-    await api(item ? `/items/${item.id}` : '/items', { method: item ? 'PATCH' : 'POST', body: data });
+    const photo = photoInput.files[0]; delete data.photo;
+    if (savedItem) for (const key of Object.keys(data)) if (data[key] === savedItem[key]) delete data[key];
+    if (!savedItem || Object.keys(data).length) savedItem = await api(savedItem ? `/items/${savedItem.id}` : '/items', { method: savedItem ? 'PATCH' : 'POST', body: data });
+    if (photo) {
+      const upload = new FormData(); upload.append('photo', photo);
+      try { savedItem = await api(`/items/${savedItem.id}/photo`, { method: 'PUT', body: upload }); }
+      catch (error) { throw new Error(`Report #${savedItem.id} was saved, but the photo was not: ${error.message} You can retry here without creating another report.`); }
+    }
     modal.close(); notice(item ? 'Report updated.' : 'Your report is on the noticeboard.'); state.page = 0; await load();
   }, item ? 'Save changes' : 'Post report');
 }
@@ -172,7 +211,8 @@ async function load() {
   const generation = ++state.generation;
   const results = $('#results'); results.replaceChildren(); results.setAttribute('aria-busy', 'true');
   $('#results-label').textContent = 'Loading…'; $('#previous').disabled = true; $('#next').disabled = true;
-  $('#filters').hidden = state.view === 'claims';
+  $('#filters').hidden = ['claims', 'notifications'].includes(state.view);
+  $('#inbox-tools').hidden = state.view !== 'notifications' || !state.user;
   document.querySelectorAll('.tab').forEach(tab => { tab.classList.toggle('active', tab.dataset.view === state.view); if (tab.dataset.view === state.view) tab.setAttribute('aria-current', 'page'); else tab.removeAttribute('aria-current'); });
   $('#page-label').textContent = `Page ${state.page + 1}`;
   if (state.view !== 'browse' && !state.user) {
@@ -180,15 +220,17 @@ async function load() {
     empty('A little space of your own.', 'Sign in to see your reports and private claims.', button('Sign in', () => authForm(), 'button dark')); return;
   }
   const params = new URLSearchParams();
-  if (state.view !== 'claims') for (const [key, value] of new FormData($('#filters'))) if (value && key !== 'archived') params.set(key, String(value).trim());
-  if (state.view !== 'claims') params.set('archived', String($('#filters [name=archived]').checked));
+  if (['browse', 'reports'].includes(state.view)) for (const [key, value] of new FormData($('#filters'))) if (value && key !== 'archived') params.set(key, String(value).trim());
+  if (['browse', 'reports'].includes(state.view)) params.set('archived', String($('#filters [name=archived]').checked));
+  if (state.view === 'notifications') params.set('unread_only', String($('#unread-only').checked));
   params.set('limit', pageSize); params.set('offset', state.page * pageSize);
-  const path = state.view === 'claims' ? '/claims/me' : state.view === 'reports' ? '/items/mine' : '/items';
+  const path = state.view === 'notifications' ? '/notifications' : state.view === 'claims' ? '/claims/me' : state.view === 'reports' ? '/items/mine' : '/items';
   try {
     const items = await api(`${path}?${params}`); if (generation !== state.generation) return;
-    $('#results-label').textContent = `${items.length} ${state.view === 'claims' ? 'claim' : 'report'}${items.length === 1 ? '' : 's'} on this page`;
-    if (!items.length) empty(state.view === 'claims' ? 'No claims just yet.' : 'Nothing here just yet.', state.view === 'claims' ? 'Recognize something on the noticeboard? Open a found report to submit a private claim.' : 'Try different filters, or be the first to share a lost or found item.');
-    for (const item of items) state.view === 'claims' ? results.append(claimCard(item)) : results.append(reportCard(item));
+    $('#results-label').textContent = `${items.length} ${state.view === 'notifications' ? 'notification' : state.view === 'claims' ? 'claim' : 'report'}${items.length === 1 ? '' : 's'} on this page`;
+    if (!items.length) empty(state.view === 'notifications' ? 'You’re all caught up.' : state.view === 'claims' ? 'No claims just yet.' : 'Nothing here just yet.', state.view === 'notifications' ? 'Claim updates will appear here. Refresh to check for new activity.' : state.view === 'claims' ? 'Recognize something on the noticeboard? Open a found report to submit a private claim.' : 'Try different filters, or be the first to share a lost or found item.');
+    for (const item of items) state.view === 'notifications' ? results.append(notificationCard(item)) : state.view === 'claims' ? results.append(claimCard(item)) : results.append(reportCard(item));
+    if (state.user) refreshNotificationCount();
     $('#previous').disabled = state.page === 0; $('#next').disabled = items.length < pageSize;
   } catch (error) { if (generation === state.generation) { $('#results-label').textContent = 'Could not load results'; empty('Let’s try that again.', error.message, button('Retry', load)); } }
   finally { if (generation === state.generation) results.setAttribute('aria-busy', 'false'); }
@@ -196,9 +238,23 @@ async function load() {
 function reportCard(item) {
   const card = node('button', undefined, 'card'); card.type = 'button'; card.addEventListener('click', () => reportDetail(item.id));
   const art = node('div', undefined, 'card-art ' + item.category); art.append(badge(item.type), node('span', symbols[item.category] || '✳', 'item-symbol')); art.lastChild.setAttribute('aria-hidden', 'true');
+  if (item.photo_url) { const image = node('img', undefined, 'report-photo'); image.src = item.photo_url; image.alt = item.title; image.loading = 'lazy'; image.addEventListener('error', () => image.remove(), { once: true }); art.prepend(image); }
   const content = node('div', undefined, 'card-content'); const top = node('div', undefined, 'card-top'); top.append(node('span', item.category, 'category'), badge(item.archived ? 'archived' : item.status));
   const bottom = node('div', undefined, 'card-bottom'); bottom.append(node('span', item.reported_by), node('span', date(item.created_at)));
   content.append(top, node('h3', item.title), node('p', '↳ ' + item.location), bottom); card.append(art, content); return card;
+}
+function notificationCard(notification) {
+  const card = node('div', undefined, 'card notification-card' + (notification.is_read ? '' : ' unread'));
+  const content = node('div', undefined, 'card-content');
+  content.append(badge(notification.is_read ? 'read' : 'unread'), node('h3', notification.kind.replaceAll('_', ' ')), node('p', notification.message, 'notification-message'), node('p', `${date(notification.created_at)} · Report #${notification.item_id}`, 'hint'));
+  const actions = node('div', undefined, 'actions'); content.append(actions);
+  actions.append(button('View report', () => reportDetail(notification.item_id)));
+  if (!notification.is_read) actions.append(button('Mark as read', async event => {
+    const control = event.currentTarget; control.disabled = true;
+    try { await api(`/notifications/${notification.id}/read`, { method: 'PATCH' }); await load(); }
+    catch (error) { notice(error.message, true); control.disabled = false; }
+  }));
+  card.append(content); return card;
 }
 function claimCard(claim) {
   const card = node('div', undefined, 'card'); const content = node('div', undefined, 'card-content');
@@ -227,11 +283,13 @@ async function reportDetail(id) {
   try {
     const item = await api(`/items/${id}`); if (!modal.open || generation !== modalGeneration) return;
     body.replaceChildren(); $('#modal-title').textContent = item.title;
+    if (item.photo_url) { const image = node('img', undefined, 'detail-photo'); image.src = item.photo_url; image.alt = item.title; body.append(image); }
     body.append(badge(item.type), document.createTextNode(' '), badge(item.archived ? 'archived' : item.status), node('p', item.description, 'detail-description'), node('p', `${item.location} · ${item.category}\nReported by ${item.reported_by} · ${date(item.created_at)} · Report #${item.id}`, 'detail-meta'));
     const owner = state.user && (state.user.id === item.reporter_id || state.user.role === 'staff');
     const actions = node('div', undefined, 'actions'); body.append(actions);
     if (!item.archived && owner) {
       actions.append(button('Edit report', () => reportForm(item)));
+      if (item.photo_url) actions.append(button('Remove photo', () => confirmAction('Remove this photo?', 'The report will remain on the noticeboard without its photo.', () => api(`/items/${id}/photo`, { method: 'DELETE' }))));
       actions.append(button('Mark resolved', () => confirmAction('Resolve this report?', 'Use this for reports without claim history. Found items with claims must be returned through handover.', () => api(`/items/${id}`, { method: 'PATCH', body: { status: 'resolved' } }))));
       actions.append(button('Archive', () => confirmAction('Archive this report?', 'It will leave the main noticeboard. Claim history is kept, and archived reports cannot be edited.', () => api(`/items/${id}/archive`, { method: 'POST' }))));
     }
@@ -278,6 +336,16 @@ $('#filters').addEventListener('submit', event => { event.preventDefault(); stat
 $('#filters').addEventListener('reset', () => { state.page = 0; setTimeout(load, 0); });
 $('#previous').addEventListener('click', () => { if (state.page > 0) { state.page--; load(); } });
 $('#next').addEventListener('click', () => { state.page++; load(); });
+$('#refresh-notifications').addEventListener('click', () => { state.page = 0; load(); });
+$('#unread-only').addEventListener('change', () => { state.page = 0; load(); });
+$('#read-all').addEventListener('click', async event => {
+  const control = event.currentTarget; control.disabled = true;
+  try { await api('/notifications/read-all', { method: 'POST' }); await load(); }
+  catch (error) { notice(error.message, true); }
+  finally { control.disabled = false; }
+});
+setInterval(() => { if (state.user && !document.hidden) refreshNotificationCount(); }, 30000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshNotificationCount(); });
 
 initTheme();
 setAccount();

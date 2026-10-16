@@ -1,6 +1,30 @@
 # Campus Lost-and-Found API
 
-Phase 7 adds a responsive student website connected to the authenticated reports and claims API.
+Phase 8 adds validated report photos and private in-app claim notifications to the student website and API.
+
+## Photos and notifications
+
+Add an optional photo when posting or editing a report. The website previews the selected image; report cards and details display the uploaded photo. Owners and staff can replace or remove photos on unarchived reports. Reports and their photos are public, so avoid identity documents and private ownership evidence in images.
+
+| Endpoint | Behavior |
+| --- | --- |
+| `PUT /items/{item_id}/photo` | Owner/staff uploads a multipart file named `photo`; returns updated report |
+| `GET /items/{item_id}/photo` | Public normalized JPEG, or 404 if absent |
+| `DELETE /items/{item_id}/photo` | Owner/staff removes photo; returns updated report |
+| `GET /notifications` | Current user's inbox; `limit` 1–100 (default 20), `offset`, `unread_only` |
+| `GET /notifications/unread-count` | Current user's unread count |
+| `PATCH /notifications/{notification_id}/read` | Mark an owned notification read; other users' IDs return 404 |
+| `POST /notifications/read-all` | Mark only the current user's notifications read |
+
+Each report supports one photo. Inputs must be JPEG or PNG, at most 2 MiB, at most 12 megapixels, and at most 6000 pixels per dimension. Actual image content must match its media type. SVG, GIF, animated PNG, corrupt files, and oversized images are rejected. Files are decoded and re-encoded as a JPEG of at most 1600×1600 pixels (1200×1200 fallback) and 1 MiB. Transparency is flattened on white; EXIF/GPS, other metadata, and original filenames are discarded. Two concurrent decodes are allowed; busy processing returns retryable 503.
+
+Photos are database BLOBs, not files under user-provided paths. Replacement/removal uses the report lock and a transaction; report deletion cascades to its photo. Archival preserves photos and prevents changes. Database backups therefore include photos. `photo_url` is null for reports without a photo; clients cannot submit it or choose storage paths. The existing 16 KiB request cap remains for other endpoints; only the photo PUT endpoint permits 2 MiB plus 16 KiB multipart overhead, while still enforcing the file's own 2 MiB limit.
+
+Report creation and photo upload are separate API operations. If an upload fails after the report is saved, the website identifies the saved report and lets you retry without duplicating it. Notifications are saved in the same transaction as claim changes, so failed claims produce no notifications and notification persistence failure rolls back the claim operation.
+
+The **Notifications** tab shows new submissions to the reporter, decisions/handover to claimants, withdrawals to reviewers, and automatic rejection of other pending claims after handover. For ownerless legacy reports, current staff receive submission/withdrawal updates. Staff decisions also inform the report owner where applicable; the acting account does not receive its own event. Messages contain claim/report IDs and state, never private evidence. Unread counts refresh every 30 seconds while the signed-in page is visible; open the inbox or use **Refresh notifications** to load its latest entries. Individual and bulk read controls persist across restarts. These are in-app notifications, not emails, browser push, or SMS.
+
+Run `alembic upgrade head` after updating. Migration 0005 preserves existing reports/accounts/claims and adds photo versions, `item_photos`, and `notifications`. Existing reports start without photos; historical claims are not backfilled with notifications. Downgrade removes photos and notifications permanently; use it only on disposable data.
 
 ## Student website
 
@@ -8,9 +32,9 @@ Open [Find My Things](http://127.0.0.1:8000/campus/) after starting the server. 
 
 The noticeboard supports keyword/location search, categories, lost/found and status filters, sorting, archival filtering, and pagination. Sign in or create a student account to post/edit reports, access **My reports** and **My claims**, or submit private evidence. Report owners and staff can review claims from report details, approve/reject, confirm physical handover, and archive reports. Destructive actions require a confirmation dialog; workflow conflicts are shown as readable errors.
 
-The frontend uses HTML, CSS, and browser JavaScript in `backend/app/web/`. These assets are included in the Python package. Requests use relative API URLs, and report/evidence text is rendered as text rather than HTML. JWTs stay in memory: refreshing the page signs you out, and signing out clears the personal workspace. Tokens already copied elsewhere remain valid until expiry. There is no password reset or photo upload yet.
+The frontend uses HTML, CSS, and browser JavaScript in `backend/app/web/`. These assets are included in the Python package. Requests use relative API URLs, and report/evidence text is rendered as text rather than HTML. JWTs stay in memory: refreshing the page signs you out, and signing out or session expiry clears the personal workspace and closes private dialogs. Tokens already copied elsewhere remain valid until expiry. Password reset remains a later phase.
 
-`GET /items/mine` is authenticated and filters by the current account before applying the same report filters and pagination as `/items`. It never accepts a client-supplied owner ID. This phase adds no database migration or runtime dependencies.
+`GET /items/mine` is authenticated and filters by the current account before applying the same report filters and pagination as `/items`. It never accepts a client-supplied owner ID.
 
 ## Requirements
 
@@ -77,7 +101,7 @@ backend/
   pyproject.toml     Package metadata and pinned direct dependencies
 ```
 
-Dependencies: FastAPI 0.142.2, Pydantic 2.13.5, Uvicorn 0.53.0, SQLAlchemy 2.1.2, Alembic 1.20.0, argon2-cffi 25.1.0, PyJWT 2.15.1, python-multipart 0.0.32, email-validator 2.3.0. Application version: `0.7.0`. The lockfile pins transitive dependencies too.
+Dependencies: FastAPI 0.142.2, Pydantic 2.13.5, Uvicorn 0.53.0, SQLAlchemy 2.1.2, Alembic 1.20.0, argon2-cffi 25.1.0, PyJWT 2.15.1, python-multipart 0.0.32, email-validator 2.3.0, Pillow 12.3.0. Application version: `0.8.0`. The lockfile pins transitive dependencies too.
 
 ## Private claims and handover
 

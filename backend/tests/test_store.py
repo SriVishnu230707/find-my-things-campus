@@ -109,7 +109,7 @@ class DatabaseTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             verify_database(self.engine)
         with self.engine.begin() as connection:
-            connection.execute(text("UPDATE alembic_version SET version_num = '0004'"))
+            connection.execute(text("UPDATE alembic_version SET version_num = '0005'"))
             connection.execute(text("DROP TABLE items"))
         from sqlalchemy.exc import SQLAlchemyError
 

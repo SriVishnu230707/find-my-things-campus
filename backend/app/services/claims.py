@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from app.models.claims import Claim
 from app.models.items import Item
 from app.schemas.claims import ClaimRead
+from app.services.notifications import notify, reviewers
 
 
 def lock_item(session, item_id):
@@ -59,12 +60,21 @@ def create_claim(session, item_id, user, evidence):
     session.add(claim)
     try:
         session.flush()
-        result = ClaimRead.model_validate(claim)
-        session.commit()
-        return result
     except IntegrityError:
         session.rollback()
         raise HTTPException(409, "An active claim already exists") from None
+    notify(
+        session,
+        reviewers(session, item),
+        item.id,
+        claim.id,
+        "claim_submitted",
+        f"A new claim (#{claim.id}) needs review on report #{item.id}.",
+        user.id,
+    )
+    result = ClaimRead.model_validate(claim)
+    session.commit()
+    return result
 
 
 def transition(session, claim_id, user, action):
@@ -84,6 +94,28 @@ def transition(session, claim_id, user, action):
         allowed = ["approved"] if action == "completed" else ["pending"]
     if item.archived or item.status != "open" or claim.status not in allowed:
         raise HTTPException(409, "Invalid claim transition")
+    reviewer_ids = reviewers(session, item)
+    if action == "approved" and session.scalar(
+        select(Claim.id).where(
+            Claim.item_id == item_id,
+            Claim.id != claim_id,
+            Claim.status.in_(["approved", "completed"]),
+        )
+    ):
+        raise HTTPException(409, "Another claim already reserves this item")
+    remaining = (
+        list(
+            session.scalars(
+                select(Claim).where(
+                    Claim.item_id == item_id,
+                    Claim.id != claim_id,
+                    Claim.status == "pending",
+                )
+            )
+        )
+        if action == "completed"
+        else []
+    )
     now = datetime.now(timezone.utc)
     claim.status = action
     claim.updated_at = now
@@ -99,11 +131,27 @@ def transition(session, claim_id, user, action):
             )
             .values(status="rejected", updated_at=now)
         )
-    try:
-        session.flush()
-        result = ClaimRead.model_validate(claim)
-        session.commit()
-        return result
-    except IntegrityError:
-        session.rollback()
-        raise HTTPException(409, "Another claim already reserves this item") from None
+        for other in remaining:
+            notify(
+                session,
+                {other.claimant_id},
+                item_id,
+                other.id,
+                "claim_rejected",
+                f"Claim #{other.id} was rejected because report #{item_id} was returned to another claimant.",
+                user.id,
+            )
+    recipients = (
+        reviewer_ids if action == "withdrawn" else reviewer_ids | {claim.claimant_id}
+    )
+    kind = "handover_completed" if action == "completed" else f"claim_{action}"
+    message = (
+        f"Handover completed for claim #{claim.id}; report #{item_id} is resolved."
+        if action == "completed"
+        else f"Claim #{claim.id} on report #{item_id} was {action}."
+    )
+    notify(session, recipients, item_id, claim.id, kind, message, user.id)
+    session.flush()
+    result = ClaimRead.model_validate(claim)
+    session.commit()
+    return result

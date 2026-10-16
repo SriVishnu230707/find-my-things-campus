@@ -70,6 +70,7 @@ class ItemRead(ItemCreate):
         from_attributes=True, str_strip_whitespace=True, extra="forbid"
     )
     id: int
+    photo_url: str | None = None
     archived: bool
     reported_by: Reporter
     reporter_id: int | None

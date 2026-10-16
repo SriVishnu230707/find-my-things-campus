@@ -46,6 +46,8 @@ def verify_database(db_engine):
 
     from app.models.claims import Claim
     from app.models.items import Item
+    from app.models.media import ItemPhoto
+    from app.models.notifications import Notification
     from app.models.users import User
 
     config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
@@ -57,6 +59,8 @@ def verify_database(db_engine):
         connection.execute(select(Item).limit(0))
         connection.execute(select(User).limit(0))
         connection.execute(select(Claim).limit(0))
+        connection.execute(select(ItemPhoto).limit(0))
+        connection.execute(select(Notification).limit(0))
 
 
 def get_session():

@@ -1,5 +1,7 @@
 """Request limits and browser guards for the local API."""
 
+import re
+
 from starlette.responses import JSONResponse
 
 MAX_BODY_BYTES = 16 * 1024
@@ -44,16 +46,25 @@ class RequestGuards:
         # on Content-Length, and stop before FastAPI parses an oversized JSON body.
         chunks = []
         size = 0
+        photo_upload = scope["method"] == "PUT" and re.fullmatch(
+            r"/items/[1-9][0-9]*/photo", scope["path"]
+        )
+        body_limit = (
+            2 * 1024 * 1024 + MAX_BODY_BYTES if photo_upload else MAX_BODY_BYTES
+        )
         while True:
             message = await receive()
             if message["type"] == "http.disconnect":
                 return
             chunk = message.get("body", b"")
             size += len(chunk)
-            if size > MAX_BODY_BYTES:
-                await JSONResponse({"detail": "Request body exceeds 16 KiB"}, 413)(
-                    scope, receive, send
+            if size > body_limit:
+                detail = (
+                    "Photo request exceeds upload limit"
+                    if photo_upload
+                    else "Request body exceeds 16 KiB"
                 )
+                await JSONResponse({"detail": detail}, 413)(scope, receive, send)
                 return
             chunks.append(chunk)
             if not message.get("more_body", False):

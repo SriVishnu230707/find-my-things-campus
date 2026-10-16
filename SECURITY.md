@@ -1,4 +1,4 @@
-# Security review through Phase 7
+# Security review through Phase 8
 
 Updated 16 October 2026. This is a local learning prototype, not a campus production service.
 
@@ -33,16 +33,24 @@ Responses processed by the request guard also receive `Cache-Control: no-store` 
 
 ## Verification
 
+Phase 8 accepts only bounded JPEG/PNG photo uploads and checks decoded content against media type. It rejects animations, invalid images and excessive dimensions, limits concurrent decodes, re-encodes onto a clean canvas without metadata, and bounds stored JPEG size. Photos are public database BLOBs rather than executable or user-named filesystem uploads. Photo writes recheck ownership and archival under the report lock. Only the exact photo PUT path receives the larger multipart body allowance; other endpoints retain 16 KiB guards.
+
+Notifications are recipient-scoped even for staff. Private evidence is never included. Claim events and notifications commit together; unsuccessful competing approvals and retries do not emit phantom events. Inbox writes cannot mark another user's records read. Session expiry clears private UI results and closes dialogs; photo upload retries reuse an already-created report.
+
+Photos and notifications increase disk usage. Enforce account/upload quotas, retention and operational rate limits before campus deployment. SQLite stores image data and backups retain it; logical deletion is not secure erasure. Production media delivery and external object storage require their own deployment verification. Notification read state is not proof that a physical handover happened.
+
 Phase 6 keeps ownership evidence outside public report responses. Claim reads are restricted to the claimant's own list or the report owner/staff review list. Students cannot submit claims on their own reports or review their own claims. Database foreign keys preserve history, partial unique indexes prevent duplicate active claims and multiple winners, and serialized report transactions prevent claim/delete/archive races. Handover resolves the report and rejects other pending claims in one transaction. Ordinary report type/status edits cannot bypass this workflow.
 
 Claim evidence is sensitive stored text, not encrypted application data. Trusted machine/database administrators can read it. Define retention, encryption, backups, account verification, and claim submission quotas before real campus use. Approval records a human decision rather than proving physical ownership.
 
-43 tests cover CRUD, search, persistence, constraints, migration consistency and ID preservation, request guards, account/password validation, expired/tampered/invalid JWTs, deleted accounts, forged role claims, anonymous and cross-user access, staff moderation, immediate role changes, legacy ownership assignment, bounded authentication resources, claim privacy and transitions, simultaneous approval/submission, handover, archival, and claim persistence after restart, website assets/security headers, authenticated own-report filtering before pagination, and rejected ownership reassignment to claimants or archived reports. Security headers also cover early guard rejections.
+50 tests cover CRUD, search, persistence, constraints, migration consistency and ID preservation, request guards, account/password validation, expired/tampered/invalid JWTs, deleted accounts, forged role claims, anonymous and cross-user access, staff moderation, immediate role changes, legacy ownership assignment, bounded authentication resources, claim privacy and transitions, simultaneous approval/submission, handover, archival, and claim persistence after restart, website assets/security headers, authenticated own-report filtering before pagination, and rejected ownership reassignment to claimants or archived reports. Security headers also cover early guard rejections.
 
 An Edge browser check against an isolated database verified Swagger OAuth2 login, authenticated report creation, rendered account profile, persisted owner updates, public reads, anonymous 401 responses, and cross-user 403 responses.
 
 Phase 6 browser verification additionally covered Swagger claim submission and evidence rendering, private review denial, approval, persisted handover/resolution, deletion conflicts, and successful archival.
 
-All 26 pinned packages were queried against OSV on 11 October 2026; no matching advisories were returned. An audit is a database snapshot, not proof that dependencies are vulnerability-free. Repeat after dependency changes.
+All 27 pinned packages were queried against OSV on 16 October 2026; no matching advisories were returned. An audit is a database snapshot, not proof that dependencies are vulnerability-free. Repeat after dependency changes.
 
 Phase 7 Edge verification exercised registration, report creation, personal reports, search, private claims, review, approval, handover, archival filters, report edits/deletion confirmations, safe rendering of HTML-like titles, signout privacy, and mobile layout. Website responses include a Content Security Policy restricting scripts and styles to this origin and blocking embedding.
+
+Phase 8 adds photo type/size/dimension and metadata checks, replacement/removal and restart persistence, staff upload permissions, notification privacy/read state/legacy routing, atomic notification failure rollback, and bounded decoder work. Edge verification covered photo preview and public rendering, removal/replacement, retry without duplicate reports, submission/approval/handover inbox events, read controls, mobile layout, and expired-session cleanup.
