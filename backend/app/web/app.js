@@ -5,6 +5,62 @@ const pageSize = 12;
 const modal = $('#modal');
 let modalGeneration = 0;
 const symbols = { electronics: '⌁', clothing: '♧', documents: '▤', accessories: '◇', other: '✳' };
+
+function initTheme() {
+  const toggleBtn = $('#theme-toggle');
+  const themeLabel = $('#theme-text');
+
+  function applyTheme(theme) {
+    if (theme === 'dark') {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    } else if (theme === 'light') {
+      document.documentElement.setAttribute('data-theme', 'light');
+    } else {
+      document.documentElement.removeAttribute('data-theme');
+    }
+
+    if (themeLabel) {
+      themeLabel.textContent = theme ? (theme === 'dark' ? 'Dark' : 'Light') : 'Auto';
+    }
+    if (toggleBtn) {
+      toggleBtn.title = `Theme: ${theme ? (theme === 'dark' ? 'Dark' : 'Light') : 'Auto (System)'}`;
+    }
+  }
+
+  // Restore saved preference
+  const savedTheme = localStorage.getItem('campus_theme');
+  applyTheme(savedTheme);
+
+  // Auto inherit OS preference changes
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (!localStorage.getItem('campus_theme')) {
+      applyTheme(null);
+    }
+  });
+
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', () => {
+      const current = localStorage.getItem('campus_theme');
+      let next;
+      if (!current) {
+        const isSystemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        next = isSystemDark ? 'light' : 'dark';
+      } else if (current === 'dark') {
+        next = 'light';
+      } else {
+        next = null;
+      }
+
+      if (next) {
+        localStorage.setItem('campus_theme', next);
+      } else {
+        localStorage.removeItem('campus_theme');
+      }
+      applyTheme(next);
+    });
+  }
+}
+
 function node(tag, text, className) {
   const el = document.createElement(tag);
   if (text !== undefined) el.textContent = text;
@@ -222,4 +278,7 @@ $('#filters').addEventListener('submit', event => { event.preventDefault(); stat
 $('#filters').addEventListener('reset', () => { state.page = 0; setTimeout(load, 0); });
 $('#previous').addEventListener('click', () => { if (state.page > 0) { state.page--; load(); } });
 $('#next').addEventListener('click', () => { state.page++; load(); });
-setAccount(); load();
+
+initTheme();
+setAccount();
+load();
