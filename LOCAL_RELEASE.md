@@ -40,6 +40,8 @@ Run the complete regression suite before release or after code changes:
 
 Tests use isolated databases and exercise report/account/privacy/photo/claim/notification/recovery/staff flows and concurrency. Four PostgreSQL/Redis tests skip unless explicit disposable infrastructure URLs are supplied; GitHub Actions supplies those services and also builds and starts the Linux container. CI is a test pipeline, not public deployment.
 
+With Node.js 22 or newer available, run `node --test backend/tests/browser_logic.cjs` for browser-function regressions. These tests use Node's built-in runner and the real frontend functions, with mocked browser surfaces; they require no npm packages. They cover blocked theme storage, malformed API responses, expired/stale sessions and delayed dialog errors. GitHub Actions runs them alongside the backend suite. Actual Edge checks separately verify rendering and browser integration.
+
 ## Local email and staff handover
 
 Create a student account in the UI, request verification and open its private message in `backend/data/mail/` to follow the verification link or copy the code. Local mode does not send real email. Avoid sharing these messages or placing them under a public directory; they contain live tokens. Recovery uses the same private delivery directory. An empty campus allowlist proves inbox access only; it does not establish membership of a real college.

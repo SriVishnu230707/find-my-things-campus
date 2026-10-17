@@ -6,6 +6,8 @@ Phase 11 finalizes the localhost release. The acceptance CLI makes only bounded 
 
 ## Fixed findings
 
+Post-release debugging fixed browser startup when localStorage is disabled, session cleanup on non-JSON 401 responses, and delayed request errors writing into replacement dialogs. Theme preferences remain usable in memory when persistence is unavailable. Seven frontend logic regressions run in CI; Edge verification separately exercised blocked storage and malformed authentication responses. These changes preserve the existing data and authentication rules.
+
 | Finding | Impact | Fix |
 | --- | --- | --- |
 | Unbounded JSON request size | Memory and JSON-parser exhaustion before field validation | Reject bodies above 16 KiB before parsing, including chunked bodies |

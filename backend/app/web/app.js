@@ -12,6 +12,9 @@ const symbols = { electronics: '⌁', clothing: '♧', documents: '▤', accesso
 function initTheme() {
   const toggleBtn = $('#theme-toggle');
   const themeLabel = $('#theme-text');
+  let preference = null;
+  try { preference = localStorage.getItem('campus_theme'); } catch { /* Storage can be disabled by browser policy. */ }
+  if (!['dark', 'light'].includes(preference)) preference = null;
 
   function applyTheme(theme) {
     if (theme === 'dark') {
@@ -31,19 +34,18 @@ function initTheme() {
   }
 
   // Restore saved preference
-  const savedTheme = localStorage.getItem('campus_theme');
-  applyTheme(savedTheme);
+  applyTheme(preference);
 
   // Auto inherit OS preference changes
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-    if (!localStorage.getItem('campus_theme')) {
+    if (!preference) {
       applyTheme(null);
     }
   });
 
   if (toggleBtn) {
     toggleBtn.addEventListener('click', () => {
-      const current = localStorage.getItem('campus_theme');
+      const current = preference;
       let next;
       if (!current) {
         const isSystemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -54,11 +56,11 @@ function initTheme() {
         next = null;
       }
 
-      if (next) {
-        localStorage.setItem('campus_theme', next);
-      } else {
-        localStorage.removeItem('campus_theme');
-      }
+      preference = next;
+      try {
+        if (next) localStorage.setItem('campus_theme', next);
+        else localStorage.removeItem('campus_theme');
+      } catch { /* Keep the selected theme for this page when persistence is unavailable. */ }
       applyTheme(next);
     });
   }
@@ -105,7 +107,12 @@ async function api(path, { method = 'GET', body, form = false } = {}) {
   let response;
   try { response = await fetch(path, { method, headers, body: body === undefined ? undefined : multipart ? body : form ? new URLSearchParams(body) : JSON.stringify(body) }); }
   catch { throw new Error('Unable to connect. Check your connection and try again.'); }
-  const result = response.status === 204 ? null : await response.json();
+  let result = null;
+  let validJSON = true;
+  if (response.status !== 204) {
+    try { result = await response.json(); }
+    catch { validJSON = false; }
+  }
   if (!response.ok) {
     if (response.status === 401 && state.token && state.token === requestToken) {
       ++state.generation;
@@ -121,6 +128,7 @@ async function api(path, { method = 'GET', body, form = false } = {}) {
     const details = Array.isArray(result?.detail) ? result.detail.map(e => `${e.loc.filter(x => !['body', 'query'].includes(x)).join('.')}: ${e.msg}`).join(' · ') : result?.detail;
     throw new Error((details || `Request failed (${response.status})`) + (response.status === 429 ? ' Please wait a minute and try again.' : ''));
   }
+  if (!validJSON) throw new Error('The server returned an unreadable response. Please try again.');
   return result;
 }
 function button(label, action, className = 'button subtle') {
@@ -149,7 +157,7 @@ function wireForm(form, handler, label) {
   form.addEventListener('submit', async event => {
     event.preventDefault(); notice('', false, true); submit.disabled = true;
     try { await handler(Object.fromEntries(new FormData(form))); }
-    catch (error) { notice(error.message, true, true); }
+    catch (error) { if (form.isConnected) notice(error.message, true, true); }
     finally { submit.disabled = false; }
   });
 }
@@ -386,7 +394,7 @@ async function reportDetail(id) {
       body.append(node('hr', undefined, 'divider'), node('h3', 'Private claims'));
       const claimArea = node('div'); body.append(claimArea); await loadReview(item, claimArea);
     }
-  } catch (error) { notice(error.message, true, true); }
+  } catch (error) { if (modal.open && generation === modalGeneration) notice(error.message, true, true); }
 }
 async function loadReview(item, area) {
   let offset = 0;

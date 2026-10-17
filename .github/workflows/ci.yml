@@ -25,6 +25,7 @@ jobs:
         with:
           node-version: '22'
       - run: node --check backend/app/web/app.js
+      - run: node --test backend/tests/browser_logic.cjs
       - run: docker build -t campus-ci .
       - name: Start built image and verify readiness
         run: |
