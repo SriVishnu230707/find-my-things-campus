@@ -2,6 +2,8 @@
 const $ = (selector, root = document) => root.querySelector(selector);
 const state = { token: null, user: null, view: 'browse', page: 0, generation: 0 };
 const pageSize = 12;
+state.staffPanel = 'summary';
+state.accountConfig = { verification_required: true, campus_domains: [], email_delivery: 'local' };
 let notificationPolling = false;
 const modal = $('#modal');
 let modalGeneration = 0;
@@ -78,6 +80,8 @@ function setAccount() {
   $('#user-label').textContent = state.user ? `${state.user.display_name}${state.user.role === 'staff' ? ' · staff' : ''}` : '';
   $('#login-button').hidden = !!state.user;
   $('#logout-button').hidden = !state.user;
+  $('#account-button').hidden = !state.user;
+  $('#staff-tab').hidden = state.user?.role !== 'staff';
   $('#notification-count').hidden = true;
   $('#notification-count').textContent = '0';
   if (state.user) refreshNotificationCount();
@@ -151,7 +155,7 @@ function wireForm(form, handler, label) {
 }
 function authForm(register = false) {
   const body = openModal(register ? 'Join your campus community' : 'Welcome back.');
-  body.append(node('p', register ? 'Create a student account to report items and submit private claims. Campus email ownership is not verified yet.' : 'Sign in to manage your reports and claims. Sessions last 15 minutes; refreshing this page signs you out.', 'hint'));
+  body.append(node('p', register ? `Create a student account, then verify your email from Account before posting or claiming.${state.accountConfig.campus_domains.length ? ' Allowed campus domains: ' + state.accountConfig.campus_domains.join(', ') : ''}` : 'Sign in to manage your reports and claims. Sessions last 15 minutes; refreshing this page signs you out.', 'hint'));
   const form = node('form', undefined, 'form-stack'); form.dataset.register = String(register); body.append(form);
   if (register) field(form, 'Display name', 'display_name', { min: 2, max: 100 });
   field(form, 'Email address', 'email', { type: 'email', max: 254 });
@@ -164,8 +168,48 @@ function authForm(register = false) {
     setAccount(); modal.close(); state.page = 0; notice(register ? 'Account created. Welcome to the community!' : 'You’re signed in.'); await load();
   }, register ? 'Create account' : 'Sign in');
   body.append(button(register ? 'Already have an account? Sign in' : 'New here? Create an account', () => authForm(!register), 'text-button'));
+  if (!register) body.append(button('Forgot password?', () => emailInstructionForm('reset', form.elements.email.value), 'text-button'));
 }
-function requireAccount() { if (state.user) return true; authForm(); return false; }
+function eligibleAccount() { return state.user && (state.user.role === 'staff' || !state.accountConfig.verification_required || (state.user.email_verified && (!state.accountConfig.campus_domains.length || state.user.campus_verified))); }
+function requireAccount() { if (!state.user) { authForm(); return false; } if (!eligibleAccount()) { accountForm(); return false; } return true; }
+function accountForm() {
+  if (!state.user) { authForm(); return; }
+  const body = openModal('Your account');
+  body.append(node('p', state.user.display_name, 'detail-description'), node('p', `${state.user.email} · ${state.user.role}`, 'hint'), badge(state.user.campus_verified ? 'campus verified' : state.user.email_verified ? 'email verified' : 'verification needed'));
+  if (!state.accountConfig.campus_domains.length) body.append(node('p', 'Campus domains have not been configured. Email verification confirms access to your inbox, not college membership.', 'hint'));
+  else body.append(node('p', 'Approved campus domains: ' + state.accountConfig.campus_domains.join(', '), 'hint'));
+  if (!state.user.email_verified) body.append(button('Send verification email', () => emailInstructionForm('verify', state.user.email), 'button dark'));
+  body.append(button('Enter verification code', () => accountTokenForm('verify')));
+  body.append(button('Reset password', () => emailInstructionForm('reset', state.user.email)));
+}
+function emailInstructionForm(purpose, email = '') {
+  const body = openModal(purpose === 'verify' ? 'Verify your email' : 'Reset your password');
+  const form = node('form', undefined, 'form-stack'); body.append(form);
+  field(form, 'Email address', 'email', { type: 'email', value: email, max: 254 });
+  wireForm(form, async data => {
+    const response = await api(purpose === 'verify' ? '/auth/verification/request' : '/auth/password/request', { method: 'POST', body: data });
+    const content = openModal('Check your email'); content.append(node('p', response.message, 'hint'));
+    if (state.accountConfig.email_delivery === 'local') content.append(node('p', 'Development mode: emails are saved privately on the server. Ask the operator for your link or code; nothing was sent to a real inbox.', 'hint'));
+    content.append(node('p', 'Repeated requests within one minute are ignored. Use the newest link; older links are replaced.', 'hint'), button('Enter code', () => accountTokenForm(purpose), 'button dark'));
+  }, 'Send instructions');
+}
+function accountTokenForm(purpose, initialToken = '') {
+  const body = openModal(purpose === 'verify' ? 'Confirm your email' : 'Choose a new password');
+  const form = node('form', undefined, 'form-stack'); body.append(form);
+  const tokenInput = field(form, purpose === 'verify' ? 'Verification code' : 'Reset code', 'token', { type: 'password', value: initialToken, min: 40, max: 128 }); tokenInput.autocomplete = 'off';
+  if (purpose === 'reset') {
+    field(form, 'New password', 'password', { type: 'password', min: 12, max: 128 }).autocomplete = 'new-password';
+    field(form, 'Confirm new password', 'confirmation', { type: 'password', min: 12, max: 128 }).autocomplete = 'new-password';
+  }
+  wireForm(form, async data => {
+    if (purpose === 'reset' && data.password !== data.confirmation) throw new Error('Passwords do not match.');
+    delete data.confirmation;
+    const result = await api(purpose === 'verify' ? '/auth/verification/confirm' : '/auth/password/reset', { method: 'POST', body: data });
+    if (purpose === 'reset') { ++state.generation; state.token = null; state.user = null; }
+    else if (state.token) state.user = await api('/auth/me');
+    setAccount(); modal.close(); notice(result.message); state.page = 0; await load();
+  }, purpose === 'verify' ? 'Confirm email' : 'Update password');
+}
 function reportForm(item = null) {
   if (!requireAccount()) return;
   const body = openModal(item ? 'Edit your report' : 'Report an item');
@@ -211,7 +255,9 @@ async function load() {
   const generation = ++state.generation;
   const results = $('#results'); results.replaceChildren(); results.setAttribute('aria-busy', 'true');
   $('#results-label').textContent = 'Loading…'; $('#previous').disabled = true; $('#next').disabled = true;
-  $('#filters').hidden = ['claims', 'notifications'].includes(state.view);
+  $('#filters').hidden = !['browse', 'reports'].includes(state.view) && !(state.view === 'staff' && state.staffPanel === 'reports');
+  $('#staff-tools').hidden = state.view !== 'staff' || state.user?.role !== 'staff';
+  $('#staff-status-label').hidden = state.staffPanel !== 'claims';
   $('#inbox-tools').hidden = state.view !== 'notifications' || !state.user;
   document.querySelectorAll('.tab').forEach(tab => { tab.classList.toggle('active', tab.dataset.view === state.view); if (tab.dataset.view === state.view) tab.setAttribute('aria-current', 'page'); else tab.removeAttribute('aria-current'); });
   $('#page-label').textContent = `Page ${state.page + 1}`;
@@ -219,24 +265,54 @@ async function load() {
     results.setAttribute('aria-busy', 'false'); $('#results-label').textContent = 'Your personal workspace';
     empty('A little space of your own.', 'Sign in to see your reports and private claims.', button('Sign in', () => authForm(), 'button dark')); return;
   }
+  if (state.view === 'staff' && state.user?.role !== 'staff') { results.setAttribute('aria-busy', 'false'); $('#results-label').textContent = 'Staff workspace'; empty('Staff access required.', 'Sign in with an authorized staff account.'); return; }
+  if (state.view === 'staff' && state.staffPanel === 'summary') {
+    try {
+      const data = await api('/staff/summary'); if (generation !== state.generation) return;
+      $('#results-label').textContent = 'Campus overview';
+      const names = { users: 'Accounts', verified_users: 'Email-verified accounts', active_users: 'Active accounts', reports: 'Total reports', open_reports: 'Open reports', resolved_reports: 'Resolved reports', archived_reports: 'Archived reports', pending_claims: 'Pending claims' };
+      for (const [key, label] of Object.entries(names)) { const card = node('div', undefined, 'card staff-metric'); const content = node('div', undefined, 'card-content'); content.append(node('h3', label), node('strong', String(data[key]), 'metric-value')); card.append(content); results.append(card); }
+    } catch (error) { if (generation === state.generation) empty('Could not load the dashboard.', error.message, button('Retry', load)); }
+    finally { if (generation === state.generation) results.setAttribute('aria-busy', 'false'); }
+    return;
+  }
   const params = new URLSearchParams();
-  if (['browse', 'reports'].includes(state.view)) for (const [key, value] of new FormData($('#filters'))) {
+  if (!$('#filters').hidden) for (const [key, value] of new FormData($('#filters'))) {
     const trimmed = String(value).trim();
     if (trimmed && key !== 'archived') params.set(key, trimmed);
   }
-  if (['browse', 'reports'].includes(state.view)) params.set('archived', String($('#filters [name=archived]').checked));
+  if (!$('#filters').hidden) params.set('archived', String($('#filters [name=archived]').checked));
+  if (state.view === 'staff' && state.staffPanel === 'claims') params.set('status', $('#staff-claim-status').value);
   if (state.view === 'notifications') params.set('unread_only', String($('#unread-only').checked));
   params.set('limit', pageSize); params.set('offset', state.page * pageSize);
-  const path = state.view === 'notifications' ? '/notifications' : state.view === 'claims' ? '/claims/me' : state.view === 'reports' ? '/items/mine' : '/items';
+  const path = state.view === 'staff' ? `/staff/${state.staffPanel}` : state.view === 'notifications' ? '/notifications' : state.view === 'claims' ? '/claims/me' : state.view === 'reports' ? '/items/mine' : '/items';
   try {
     const items = await api(`${path}?${params}`); if (generation !== state.generation) return;
-    $('#results-label').textContent = `${items.length} ${state.view === 'notifications' ? 'notification' : state.view === 'claims' ? 'claim' : 'report'}${items.length === 1 ? '' : 's'} on this page`;
+    const noun = state.view === 'staff' ? ({ reports: 'report', claims: 'claim', users: 'account', audit: 'event' }[state.staffPanel]) : state.view === 'notifications' ? 'notification' : state.view === 'claims' ? 'claim' : 'report';
+    $('#results-label').textContent = `${items.length} ${noun}${items.length === 1 ? '' : 's'} on this page`;
     if (!items.length) empty(state.view === 'notifications' ? 'You’re all caught up.' : state.view === 'claims' ? 'No claims just yet.' : 'Nothing here just yet.', state.view === 'notifications' ? 'Claim updates will appear here. Refresh to check for new activity.' : state.view === 'claims' ? 'Recognize something on the noticeboard? Open a found report to submit a private claim.' : 'Try different filters, or be the first to share a lost or found item.');
-    for (const item of items) state.view === 'notifications' ? results.append(notificationCard(item)) : state.view === 'claims' ? results.append(claimCard(item)) : results.append(reportCard(item));
+    for (const item of items) state.view === 'staff' ? results.append(staffCard(item)) : state.view === 'notifications' ? results.append(notificationCard(item)) : state.view === 'claims' ? results.append(claimCard(item)) : results.append(reportCard(item));
     if (state.user) refreshNotificationCount();
     $('#previous').disabled = state.page === 0; $('#next').disabled = items.length < pageSize;
   } catch (error) { if (generation === state.generation) { $('#results-label').textContent = 'Could not load results'; empty('Let’s try that again.', error.message, button('Retry', load)); } }
   finally { if (generation === state.generation) results.setAttribute('aria-busy', 'false'); }
+}
+function staffCard(entry) {
+  if (state.staffPanel === 'reports') return reportCard(entry);
+  const card = node('div', undefined, 'card'); const content = node('div', undefined, 'card-content'); card.append(content);
+  if (state.staffPanel === 'users') {
+    content.append(badge(entry.is_active ? 'active' : 'disabled'), node('h3', entry.display_name), node('p', entry.email), node('p', `${entry.role} · ${entry.campus_verified ? 'campus verified' : entry.email_verified ? 'email verified' : 'unverified'} · Account #${entry.id}`, 'hint'));
+    if (entry.role !== 'staff') content.append(button(entry.is_active ? 'Disable account' : 'Enable account', () => {
+      const body = openModal(entry.is_active ? 'Disable this account?' : 'Enable this account?'); body.append(node('p', 'This revokes previous sessions. Reports and claim history are preserved. Do not put passwords or private claim evidence in the reason.', 'hint'));
+      const form = node('form', undefined, 'form-stack'); body.append(form); field(form, 'Reason for moderation', 'reason', { type: 'textarea', min: 8, max: 500 });
+      wireForm(form, async data => { await api(`/staff/users/${entry.id}/status`, { method: 'PATCH', body: { is_active: !entry.is_active, reason: data.reason } }); modal.close(); notice('Account status updated.'); await load(); }, 'Confirm account change');
+    }));
+  } else if (state.staffPanel === 'claims') {
+    content.append(badge(entry.status), node('h3', `Claim #${entry.id} · Report #${entry.item_id}`), node('p', entry.evidence, 'staff-evidence'), button('Review report', () => reportDetail(entry.item_id)));
+  } else {
+    content.append(node('h3', entry.action.replaceAll('_', ' ')), node('p', `${entry.actor_role} #${entry.actor_id ?? 'local'} · ${date(entry.created_at)}`, 'hint'), node('p', [entry.item_id && `Report #${entry.item_id}`, entry.claim_id && `Claim #${entry.claim_id}`, entry.target_user_id && `Account #${entry.target_user_id}`].filter(Boolean).join(' · ')), node('p', entry.details, 'staff-evidence'));
+  }
+  return card;
 }
 function reportCard(item) {
   const card = node('button', undefined, 'card'); card.type = 'button'; card.addEventListener('click', () => reportDetail(item.id));
@@ -332,6 +408,7 @@ async function loadReview(item, area) {
 $('#close-modal').addEventListener('click', () => modal.close());
 modal.addEventListener('close', () => { ++modalGeneration; $('#modal-body').replaceChildren(); notice('', false, true); });
 $('#login-button').addEventListener('click', () => authForm());
+$('#account-button').addEventListener('click', accountForm);
 $('#logout-button').addEventListener('click', () => { ++state.generation; state.token = null; state.user = null; setAccount(); modal.close(); notice('You’re signed out.'); state.page = 0; load(); });
 $('#new-report').addEventListener('click', () => reportForm());
 document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => { state.view = tab.dataset.view; state.page = 0; notice(''); load(); }));
@@ -349,7 +426,17 @@ $('#read-all').addEventListener('click', async event => {
 });
 setInterval(() => { if (state.user && !document.hidden) refreshNotificationCount(); }, 30000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshNotificationCount(); });
+$('#staff-section').addEventListener('change', () => { state.staffPanel = $('#staff-section').value; state.page = 0; load(); });
+$('#staff-claim-status').addEventListener('change', () => { state.page = 0; load(); });
 
 initTheme();
 setAccount();
 load();
+api('/auth/config').then(config => { state.accountConfig = config; }).catch(() => notice('Account configuration is unavailable. Please try again later.', true));
+function handleAccountLink() {
+  const accountLink = new URLSearchParams(location.hash.slice(1));
+  const linkPurpose = accountLink.has('verify') ? 'verify' : accountLink.has('reset') ? 'reset' : null;
+  if (linkPurpose) { const raw = accountLink.get(linkPurpose); accountLink.delete(linkPurpose); history.replaceState(null, '', location.pathname); accountTokenForm(linkPurpose, raw); }
+}
+window.addEventListener('hashchange', handleAccountLink);
+handleAccountLink();

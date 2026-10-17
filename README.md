@@ -1,6 +1,44 @@
 # Campus Lost-and-Found API
 
-Phase 8 adds validated report photos and private in-app claim notifications to the student website and API.
+Phase 9 adds email verification, password recovery, staff review queues, account controls, and moderation history.
+
+## Verified accounts, recovery, and staff dashboard
+
+Students now verify their email before creating or changing reports/photos, submitting claims, approving claims, or confirming handover. Login, personal reads, notification read controls, and withdrawing an existing claim remain available without verification. Existing accounts are preserved and start unverified; they are not silently declared verified. Staff roles provisioned by the trusted local administrator remain authorized to moderate.
+
+Use **Account → Send verification email**, then open the single-use link or enter the code. Verification links expire after 30 minutes; reset links expire after 15 minutes. **Forgot password?** on the login dialog and **Reset password** in Account start recovery. Password resets preserve password spaces exactly and revoke every previously issued access token for that account. A failed reset rolls back both the password change and link consumption. New requests within one minute are ignored; a later request replaces previous unused links of the same purpose.
+
+| Endpoint | Behavior |
+| --- | --- |
+| `GET /auth/config` | Public verification/domain/delivery-mode settings; no credentials |
+| `POST /auth/verification/request` | JSON email; generic 202 response |
+| `POST /auth/verification/confirm` | JSON token; verifies email |
+| `POST /auth/password/request` | JSON email; generic 202 response |
+| `POST /auth/password/reset` | JSON token and password; consumes link and revokes sessions |
+| `GET /staff/summary` | Staff-only overview counts |
+| `GET /staff/reports` | Staff-only report filters and pagination |
+| `GET /staff/claims` | Staff-only private queue filtered by status |
+| `GET /staff/users` | Staff-only profiles and account status; never password hashes |
+| `PATCH /staff/users/{user_id}/status` | Staff enables/disables a student account with a moderation reason |
+| `GET /staff/audit` | Staff-only paginated moderation history |
+
+Staff see a **Staff dashboard** tab with Overview, Reports, Claim queue, Accounts, and Moderation history. Review a report from the queue to approve/reject or confirm handover. Disabling/reactivating a student revokes old sessions while preserving reports and claims. The web API cannot change roles or disable staff accounts; use the trusted CLI for staff provisioning and role changes. Audit events record account actions, claim decisions, staff report/photo changes, and CLI role/owner changes. They store identifiers/actions rather than passwords, reset links, or private claim evidence, and survive report deletion. They are database history, not a tamper-proof ledger against a database administrator.
+
+### Campus domain configuration
+
+Set `CAMPUS_EMAIL_DOMAINS` to your actual college domains, separated by commas, before starting the server. Matching is exact; list subdomains explicitly. With a configured allowlist, student registration outside those domains is rejected, and verified email must still match the current allowlist for student writes. Restart after changing configuration.
+
+No real college domain has been supplied yet. With an empty allowlist, the app verifies inbox access but sets `campus_verified` to false; it does not claim college membership. `REQUIRE_VERIFIED_EMAIL=true` is the default. Setting it to false is an explicit development compatibility mode; do not use that to bypass verification for a campus pilot. Legacy tests use compatibility mode, while Phase 9 tests exercise mandatory verification and the domain allowlist.
+
+### Local email testing and SMTP
+
+By default, `MAIL_MODE=local` saves private `.eml` messages under ignored `backend/data/mail/`. Messages are not served through the API or website and are not delivered to real inboxes. The local operator can open the recipient's message to follow its link or copy its code. Delete expired development messages when no longer needed, and protect this directory like credentials. `MAIL_DIRECTORY` can point to another private directory. Local delivery is restricted to loopback configuration.
+
+For real delivery, configure `MAIL_MODE=smtp`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM`, and optionally the paired `SMTP_USERNAME`/`SMTP_PASSWORD`. `SMTP_SECURITY` accepts `starttls` (default, normally port 587) or `ssl` (normally port 465); certificate verification is enabled and plaintext delivery is not supported. Supply `PUBLIC_BASE_URL` as the intended origin. Non-loopback origins require HTTPS. Hosting, Host/Origin policy, and public URL changes belong to the deployment phase; setting a public email-link URL alone does not deploy the server.
+
+The code supports SMTP and tests its TLS adapter with a mock server. Actual SMTP delivery still needs provider credentials and an integration check. Email requests return the same message for nonexistent/ineligible accounts and delivery failure; a generic server log identifies failure type without addresses or tokens. Normal responses do not promise constant-time delivery. Single-use token digests are stored in the database; raw tokens appear only in private delivery messages and masked confirmation forms. Links use URL fragments and are removed from the address bar on opening, including same-tab navigation.
+
+Migration 0006 adds verification/activity/session fields, `account_tokens`, and `audit_events` while preserving existing accounts and content. Back up the database and run `alembic upgrade head` before restarting. Existing Phase 8 JWTs remain usable while their account's session version is zero; resets and account status changes invalidate them. Downgrade removes identity flags, recovery tokens, and audit history; use it only on disposable data.
 
 ## Photos and notifications
 
@@ -32,7 +70,7 @@ Open [Find My Things](http://127.0.0.1:8000/campus/) after starting the server. 
 
 The noticeboard supports keyword/location search, categories, lost/found and status filters, sorting, archival filtering, and pagination. Sign in or create a student account to post/edit reports, access **My reports** and **My claims**, or submit private evidence. Report owners and staff can review claims from report details, approve/reject, confirm physical handover, and archive reports. Destructive actions require a confirmation dialog; workflow conflicts are shown as readable errors.
 
-The frontend uses HTML, CSS, and browser JavaScript in `backend/app/web/`. These assets are included in the Python package. Requests use relative API URLs, and report/evidence text is rendered as text rather than HTML. JWTs stay in memory: refreshing the page signs you out, and signing out or session expiry clears the personal workspace and closes private dialogs. Tokens already copied elsewhere remain valid until expiry. Password reset remains a later phase.
+The frontend uses HTML, CSS, and browser JavaScript in `backend/app/web/`. These assets are included in the Python package. Requests use relative API URLs, and report/evidence text is rendered as text rather than HTML. JWTs stay in memory: refreshing the page signs you out, and signing out or session expiry clears the personal workspace and closes private dialogs. Tokens copied elsewhere remain valid until expiry or account-session revocation.
 
 `GET /items/mine` is authenticated and filters by the current account before applying the same report filters and pagination as `/items`. It never accepts a client-supplied owner ID.
 
@@ -101,7 +139,7 @@ backend/
   pyproject.toml     Package metadata and pinned direct dependencies
 ```
 
-Dependencies: FastAPI 0.142.2, Pydantic 2.13.5, Uvicorn 0.53.0, SQLAlchemy 2.1.2, Alembic 1.20.0, argon2-cffi 25.1.0, PyJWT 2.15.1, python-multipart 0.0.32, email-validator 2.3.0, Pillow 12.3.0. Application version: `0.8.0`. The lockfile pins transitive dependencies too.
+Dependencies: FastAPI 0.142.2, Pydantic 2.13.5, Uvicorn 0.53.0, SQLAlchemy 2.1.2, Alembic 1.20.0, argon2-cffi 25.1.0, PyJWT 2.15.1, python-multipart 0.0.32, email-validator 2.3.0, Pillow 12.3.0. Application version: `0.9.0`. The lockfile pins transitive dependencies too.
 
 ## Private claims and handover
 
@@ -139,7 +177,7 @@ In Swagger, first execute `/auth/register`. Click **Authorize**, enter the email
 
 Passwords require 12–128 characters and preserve spaces exactly. Display names require 2–100 characters. Emails are normalized to lowercase; duplicate registration returns 409. Registration cannot assign staff privileges. Password hashes are never returned.
 
-Anyone can read reports. Creating a report requires login; editing and deleting require its owner or a staff account. Missing/invalid credentials return 401; insufficient permissions return 403. The server assigns `reporter_id` and `reported_by` from the account. These fields cannot be supplied or edited through the report API. Display names are public and do not prove campus identity.
+Anyone can read reports. Creating a report requires login and eligible verified email for students; editing and deleting also require its owner or a staff account. Missing/invalid credentials return 401; insufficient permissions or required verification return 403. The server assigns `reporter_id` and `reported_by` from the account. These fields cannot be supplied or edited through the report API. Display names are public and do not prove campus identity.
 
 The signing secret is generated once in ignored `backend/data/auth.secret`. Alternatively set a randomly generated `AUTH_SECRET` of at least 32 bytes before starting the server. Keep it private and persistent across restarts. Replacing it invalidates all existing tokens. Swagger logout clears its stored token; it does not revoke a token already copied elsewhere. Roles are checked in the database on every request, so role changes take effect immediately.
 
@@ -151,7 +189,7 @@ Local administration (requires trusted access to the server and database):
 .\.venv\Scripts\python.exe -m app.cli assign-owner --item-id 1 --email student@example.org
 ```
 
-Staff creation prompts for a password privately. Use `--role student` to demote an account. Assign legacy reports only after verifying their owner; matching display names is insufficient. Ownership reassignment is serialized with the claim workflow and rejects archived reports or a target account with claim history on that report. Email verification, password reset, refresh tokens, and per-token revocation are deferred.
+Staff creation prompts for a password privately. Accounts created directly by this trusted command have their email flag marked verified by the operator; campus-domain verification is still computed separately. Use `--role student` to demote an account. Assign legacy reports only after verifying their owner; matching display names is insufficient. Ownership reassignment is serialized with the claim workflow and rejects archived reports or a target account with claim history on that report. Refresh tokens and individual-token revocation remain deferred; reset and status changes revoke all account sessions.
 
 ## Report API
 
@@ -169,6 +207,8 @@ Example create request (use Swagger UI or PowerShell):
 $password = Read-Host 'Choose a password (12–128 characters)' -MaskInput # PowerShell 7
 $account = @{email='student@example.org'; display_name='Vishnu'; password=$password} | ConvertTo-Json
 Invoke-RestMethod http://127.0.0.1:8000/auth/register -Method Post -ContentType 'application/json' -Body $account
+Invoke-RestMethod http://127.0.0.1:8000/auth/verification/request -Method Post -ContentType 'application/json' -Body '{"email":"student@example.org"}'
+Read-Host 'Complete email verification through the link/code, then press Enter' | Out-Null
 $login = Invoke-RestMethod http://127.0.0.1:8000/auth/login -Method Post -ContentType 'application/x-www-form-urlencoded' -Body @{username='student@example.org'; password=$password}
 $headers = @{Authorization="Bearer $($login.access_token)"}
 $report = @{

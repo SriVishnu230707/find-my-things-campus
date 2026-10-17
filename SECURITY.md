@@ -1,6 +1,6 @@
-# Security review through Phase 8
+# Security review through Phase 9
 
-Updated 16 October 2026. This is a local learning prototype, not a campus production service.
+Updated 17 October 2026. This is a local learning prototype, not a campus production service.
 
 ## Fixed findings
 
@@ -22,8 +22,8 @@ Responses processed by the request guard also receive `Cache-Control: no-store` 
 
 ## Remaining threats and boundaries
 
-- **Identity verification:** registration does not verify email ownership or campus membership. Anyone may register an unused email. Display names are unverified. Add verified campus identity before real use; no email delivery or password reset exists yet.
-- **Token theft:** bearer tokens remain usable for up to 15 minutes. There is no per-token revocation or refresh flow. Keep secrets private, use HTTPS in deployment, and rotate the signing secret to invalidate all tokens when necessary. Deleted accounts fail authentication and database role changes apply immediately.
+- **Identity verification:** students must verify their email before report/claim writes by default. Campus membership is claimed only when the verified address exactly matches a configured college domain. Without the real domain allowlist, verification proves inbox access only. Display names remain unverified. Local email mode writes private development messages rather than delivering mail; configure and test TLS SMTP before real use. Development compatibility mode must not be used to bypass verification in a campus pilot.
+- **Token theft:** bearer tokens remain usable for up to 15 minutes. Password resets and account status changes revoke all account sessions through a database version check. There is no individual-token revocation or refresh flow. Keep secrets private, use HTTPS in deployment, and rotate the signing secret to invalidate all tokens when necessary. Deleted/disabled accounts fail authentication and database role changes apply immediately. Already-authorized in-flight requests are not guaranteed to be cancelled.
 - **Availability: flooding and slow requests.** Authentication has a 60-request/minute/client process-local limiter, capped at 1,024 remembered clients, and two concurrent Argon2 operations. Client churn, multiple workers, report-write flooding, disk exhaustion, and slow connections still require shared rate limits, quotas, and proxy timeouts. Do not trust forwarded client headers from arbitrary clients; local startup disables them.
 - **Administration:** anyone with trusted server/database access can create staff or reassign reports through the CLI. Protect that machine, the signing secret, database, and backups. Legacy reports have no owner and remain staff-only until explicitly assigned after verification.
 - **Persistence and integrity:** Phase 3 adds durable SQLite transactions, shared file storage, database constraints, and rollback. Partial updates change only supplied columns. Concurrent edits to the same field remain last-write-wins; later editing workflows may need version checks. Backups are required to recover accidental or unauthorized deletion.
@@ -32,6 +32,12 @@ Responses processed by the request guard also receive `Cache-Control: no-store` 
 - Local Host/Origin policy intentionally targets localhost:8000. Deployment and a future frontend require explicit policy configuration, HTTPS, and real access control. Do not widen the allowlist to `*` as a shortcut.
 
 ## Verification
+
+Phase 9 stores only SHA-256 digests of cryptographically random, purpose-bound verification/reset tokens. Links expire, are consumed once under an account lock, and are replaced on later requests. Persistent per-account cooldowns supplement the local authentication limiter. Password resets revoke old JWTs, preserve password spaces, and roll back token use if the transaction fails. Email requests return generic responses for missing/ineligible accounts and delivery failure; this is not a constant-time or distributed anti-enumeration guarantee.
+
+Staff routes check the current account's active role, and web account status changes recheck authority under a lock. Public registration cannot assign roles, verified status, or activity flags. Staff accounts cannot be disabled through the web API. Moderation events commit with their action and survive report deletion, excluding tokens/passwords/private claim evidence from automatic audit details. Staff-entered moderation reasons are trusted operational text and must not include secrets. Audit history remains editable by a trusted database administrator.
+
+Local `.eml` messages contain live secrets: they are ignored by Git, never exposed by HTTP, and require filesystem protection and retention cleanup. Browser links use fragments rather than query strings, are scrubbed on initial/same-tab navigation, and require explicit confirmation so link scanners do not consume tokens through GET. SMTP uses certificate-verified STARTTLS or SSL; actual provider delivery requires credentials and a real integration check. Deployments still require HTTPS, configured campus domains, shared throttling, and protection for staff accounts.
 
 Phase 8 accepts only bounded JPEG/PNG photo uploads and checks decoded content against media type. It rejects animations, invalid images and excessive dimensions, limits concurrent decodes, re-encodes onto a clean canvas without metadata, and bounds stored JPEG size. Photos are public database BLOBs rather than executable or user-named filesystem uploads. Photo writes recheck ownership and archival under the report lock. Only the exact photo PUT path receives the larger multipart body allowance; other endpoints retain 16 KiB guards.
 
@@ -43,7 +49,7 @@ Phase 6 keeps ownership evidence outside public report responses. Claim reads ar
 
 Claim evidence is sensitive stored text, not encrypted application data. Trusted machine/database administrators can read it. Define retention, encryption, backups, account verification, and claim submission quotas before real campus use. Approval records a human decision rather than proving physical ownership.
 
-51 tests cover CRUD, search, persistence, constraints, migration consistency and ID preservation, request guards, account/password validation, expired/tampered/invalid JWTs, deleted accounts, forged role claims, anonymous and cross-user access, staff moderation, immediate role changes, legacy ownership assignment, bounded authentication resources, claim privacy and transitions, simultaneous approval/submission, handover, archival, and claim persistence after restart, website assets/security headers, authenticated own-report filtering before pagination, and rejected ownership reassignment to claimants or archived reports. Security headers also cover early guard rejections.
+60 tests cover CRUD, search, persistence, constraints, migration consistency and ID preservation, request guards, account/password validation, expired/tampered/invalid JWTs, deleted accounts, forged role claims, anonymous and cross-user access, staff moderation, immediate role changes, legacy ownership assignment, bounded authentication resources, claim privacy and transitions, simultaneous approval/submission, handover, archival, and claim persistence after restart, website assets/security headers, authenticated own-report filtering before pagination, and rejected ownership reassignment to claimants or archived reports. Security headers also cover early guard rejections.
 
 An Edge browser check against an isolated database verified Swagger OAuth2 login, authenticated report creation, rendered account profile, persisted owner updates, public reads, anonymous 401 responses, and cross-user 403 responses.
 
@@ -56,3 +62,5 @@ Phase 7 Edge verification exercised registration, report creation, personal repo
 Phase 8 adds photo type/size/dimension and metadata checks, replacement/removal and restart persistence, staff upload permissions, notification privacy/read state/legacy routing, atomic notification failure rollback, and bounded decoder work. Edge verification covered photo preview and public rendering, removal/replacement, retry without duplicate reports, submission/approval/handover inbox events, read controls, mobile layout, and expired-session cleanup.
 
 Post-Phase 8 regression: claim-storage integrity failures return generic 503 and roll back instead of falsely reporting a duplicate claim. Active duplicate claims are checked under the report lock and remain protected by the database unique index. Browser verification confirmed whitespace-only search/location values are omitted rather than sent as invalid empty filters.
+
+Phase 9 tests additionally cover domain enforcement, verification gates, token expiry/replacement/purpose/single use, concurrent resets, exact password handling, session revocation, disabled accounts, generic delivery failures, rollback-safe recovery, staff permissions, persistent moderation history, and the TLS SMTP adapter. Edge checks exercised same-tab verification links and URL scrubbing, verified report/claim flows, staff overview/queues/audit/account controls, recovery with revoked prior sessions, and mobile layout.
