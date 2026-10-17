@@ -1,6 +1,8 @@
-# Security review through Phase 9
+# Security review through Phase 11
 
 Updated 17 October 2026. This is a local learning prototype, not a campus production service.
+
+Phase 11 finalizes the localhost release. The acceptance CLI makes only bounded unauthenticated GET requests, refuses redirects and credential-bearing origins, redacts exception text, and verifies protected routes and static private-data paths without altering campus data. Its tests cover dependency failure, oversized responses and deliberately regressed endpoints. The PowerShell launcher binds only to loopback and refuses to replace an existing listener. These automated checks do not prove SMTP delivery or public deployment readiness; the local operator guide documents the remaining human walkthrough and recovery responsibilities.
 
 ## Fixed findings
 

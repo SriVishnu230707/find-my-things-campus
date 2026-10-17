@@ -1,5 +1,7 @@
 # Campus Lost-and-Found API
 
+Phase 11 is the final localhost release, version 0.11.0. Use the [local release guide](LOCAL_RELEASE.md) for startup, acceptance checks, staff setup, backups and handover. Run `./scripts/Start-Campus.ps1` to start and `./scripts/Start-Campus.ps1 -CheckOnly` to verify the running app.
+
 Phase 10 adds production configuration, PostgreSQL deployment, shared Redis rate limits, HTTPS reverse proxy configuration, monitoring, backups, migration tooling, and continuous integration. See [the deployment runbook](deploy/README.md). Public hosting still requires your server, domain, college email domains, and SMTP credentials.
 
 `GET /health` checks process liveness; `GET /ready` checks database and configured Redis connectivity. `/metrics` requires a private bearer token and is blocked at the public proxy. Development continues to use SQLite and local email; production startup refuses those defaults.
@@ -247,7 +249,7 @@ $env:DATABASE_URL = 'sqlite:///C:/projects/find my things/backend/data/custom.db
 
 Migrations are explicit: startup refuses an unmigrated database rather than silently creating tables. Re-running `upgrade head` is safe. To add future schema changes, edit the models, generate a revision with `alembic -c backend/alembic.ini revision --autogenerate -m "Describe change"`, inspect the generated migration, then upgrade. Use the virtual environment's Python with `-m alembic` as above.
 
-SQLite serializes writes and waits up to five seconds on a busy database. Partial updates issue a single SQL UPDATE for supplied fields; concurrent edits to the same field still use last-write-wins. Use one worker for local development. PostgreSQL will require its own driver and verification in the deployment phase.
+SQLite serializes writes and waits up to five seconds on a busy database. Partial updates issue a single SQL UPDATE for supplied fields; concurrent edits to the same field still use last-write-wins. Use one worker for local development. Phase 10 adds the PostgreSQL driver and real PostgreSQL integration checks in CI; see the deployment runbook.
 
 For a simple local backup, stop the server before copying `campus.db` to a safe location. Do not commit reports or database credentials. `downgrade base` drops the reports table and its data; use it only on disposable databases.
 

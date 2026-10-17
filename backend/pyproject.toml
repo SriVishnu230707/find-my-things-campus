@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "campus-lost-and-found-api"
-version = "0.10.0"
-description = "Campus Lost-and-Found — Phase 10 deployment and operations"
+version = "0.11.0"
+description = "Campus Lost-and-Found — Phase 11 local release and handover"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi==0.142.2",

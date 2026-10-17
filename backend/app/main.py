@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from app import __version__
 from app.account_config import validate_account_config
 from app.auth_limits import redis_client
 from app.database import engine, verify_database
@@ -56,7 +57,7 @@ async def lifespan(app):
 app = FastAPI(
     title="Campus Lost-and-Found API",
     description="Browse campus reports. Sign in to create reports and manage your own; staff can moderate.",
-    version="0.10.0",
+    version=__version__,
     lifespan=lifespan,
 )
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(allowed_hosts()))
