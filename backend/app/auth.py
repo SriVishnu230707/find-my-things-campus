@@ -3,11 +3,12 @@
 from typing import Annotated
 
 import jwt
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from app.account_config import campus_address, campus_domains, verification_required
+from app.auth_limits import mutation_guard
 from app.database import get_session
 from app.models.users import User
 from app.security import decode_token
@@ -16,6 +17,7 @@ oauth2 = OAuth2PasswordBearer(tokenUrl="auth/login")
 
 
 def get_current_user(
+    request: Request,
     token: Annotated[str, Depends(oauth2)],
     session: Annotated[Session, Depends(get_session)],
 ) -> User:
@@ -29,6 +31,7 @@ def get_current_user(
     user = session.get(User, user_id)
     if user is None or not user.is_active or user.token_version != version:
         raise failure
+    mutation_guard(request, user.id)
     # Role is read from the database on every request, never trusted from JWT claims.
     return user
 

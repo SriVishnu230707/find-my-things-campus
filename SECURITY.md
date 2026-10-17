@@ -55,7 +55,9 @@ An Edge browser check against an isolated database verified Swagger OAuth2 login
 
 Phase 6 browser verification additionally covered Swagger claim submission and evidence rendering, private review denial, approval, persisted handover/resolution, deletion conflicts, and successful archival.
 
-All 27 pinned packages were queried against OSV on 16 October 2026; no matching advisories were returned. An audit is a database snapshot, not proof that dependencies are vulnerability-free. Repeat after dependency changes.
+All 31 pinned runtime packages were queried against OSV on 17 October 2026; no matching advisories were returned. An audit is a database snapshot, not proof that dependencies are vulnerability-free. Repeat after dependency changes.
+
+Phase 10 adds explicit production startup requirements, private authenticated Redis throttling with fail-closed writes, PostgreSQL TLS validation for external services, configured Host/Origin policies, protected metrics, request IDs and route-based logs. The Compose template terminates HTTPS at Caddy and trusts forwarded headers only from its fixed proxy address. Internal Docker database/Redis traffic uses an explicit TLS exception; external deployments must retain verified TLS. Metrics are process-local, and application throttles do not replace host/network denial-of-service protection. Backups require private off-host storage and restore drills; the template alone does not establish those operations. See deploy/README.md for migration and recovery precautions.
 
 Phase 7 Edge verification exercised registration, report creation, personal reports, search, private claims, review, approval, handover, archival filters, report edits/deletion confirmations, safe rendering of HTML-like titles, signout privacy, and mobile layout. Website responses include a Content Security Policy restricting scripts and styles to this origin and blocking embedding.
 

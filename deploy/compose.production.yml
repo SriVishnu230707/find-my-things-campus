@@ -1,0 +1,97 @@
+name: campus
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: campus
+      POSTGRES_USER: campus
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U campus -d campus"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [private]
+  redis:
+    image: redis:7-alpine
+    user: redis
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD}
+    command: [/bin/sh, -c, "umask 077; printf 'requirepass %s\nmaxmemory 256mb\nmaxmemory-policy noeviction\nappendonly no\n' \"$${REDIS_PASSWORD}\" > /tmp/redis.conf; exec redis-server /tmp/redis.conf"]
+    healthcheck:
+      test: [CMD-SHELL, "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [private]
+  migrate:
+    build: ..
+    env_file: ../.env.production
+    environment: &app_environment
+      APP_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+      REDIS_URL: ${REDIS_URL:?Set REDIS_URL}
+      DB_REQUIRE_TLS: "false"
+      REDIS_REQUIRE_TLS: "false"
+    command: [python, -m, alembic, -c, backend/alembic.ini, upgrade, head]
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    networks: [private]
+  app:
+    build: ..
+    restart: unless-stopped
+    env_file: ../.env.production
+    environment: *app_environment
+    command: [python, -m, uvicorn, "app.main:app", --host, "0.0.0.0", --port, "8000", --proxy-headers, --forwarded-allow-ips, "172.29.10.2", --no-access-log]
+    read_only: true
+    tmpfs: [/tmp:size=64m,mode=1777]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    networks: [private, proxy, egress]
+  edge:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      CAMPUS_DOMAIN: ${CAMPUS_DOMAIN:?Set CAMPUS_DOMAIN}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [app]
+    networks:
+      proxy: {ipv4_address: 172.29.10.2}
+      public: {}
+  backup:
+    image: postgres:17-alpine
+    profiles: [ops]
+    environment:
+      PGHOST: db
+      PGDATABASE: campus
+      PGUSER: campus
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - ./backup-postgres.sh:/ops/backup-postgres.sh:ro
+      - ${BACKUP_DIRECTORY:?Set a private BACKUP_DIRECTORY}:/backups
+    entrypoint: [/bin/sh, /ops/backup-postgres.sh]
+    depends_on:
+      db: {condition: service_healthy}
+    networks: [private]
+networks:
+  private: {internal: true}
+  proxy:
+    internal: true
+    ipam:
+      config: [{subnet: 172.29.10.0/24}]
+  public: {}
+  egress: {}
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:

@@ -45,6 +45,10 @@ class ReportAPI(unittest.TestCase):
             "MAIL_MODE": "local",
             "MAIL_DIRECTORY": str(Path(cls.directory.name) / "mail"),
             "PUBLIC_BASE_URL": "http://127.0.0.1:8000",
+            "APP_ENV": "development",
+            "ALLOWED_HOSTS": "localhost,127.0.0.1",
+            "TRUSTED_ORIGINS": "http://localhost:8000,http://127.0.0.1:8000",
+            "REDIS_URL": "",
             "PYTHONPATH": os.pathsep.join(sys.path),
         }
         subprocess.run(

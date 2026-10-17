@@ -1,6 +1,8 @@
 # Campus Lost-and-Found API
 
-Phase 9 adds email verification, password recovery, staff review queues, account controls, and moderation history.
+Phase 10 adds production configuration, PostgreSQL deployment, shared Redis rate limits, HTTPS reverse proxy configuration, monitoring, backups, migration tooling, and continuous integration. See [the deployment runbook](deploy/README.md). Public hosting still requires your server, domain, college email domains, and SMTP credentials.
+
+`GET /health` checks process liveness; `GET /ready` checks database and configured Redis connectivity. `/metrics` requires a private bearer token and is blocked at the public proxy. Development continues to use SQLite and local email; production startup refuses those defaults.
 
 ## Verified accounts, recovery, and staff dashboard
 

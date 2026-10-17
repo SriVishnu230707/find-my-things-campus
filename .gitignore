@@ -13,3 +13,8 @@ dist/
 backend/data/auth.secret
 backend/data/mail/
 *.eml
+.env.production
+.env.local
+deploy/secrets/
+backups/
+*.dump

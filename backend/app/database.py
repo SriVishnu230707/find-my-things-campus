@@ -17,7 +17,12 @@ class Base(DeclarativeBase):
 
 def database_url() -> str:
     default = Path(__file__).resolve().parents[1] / "data" / "campus.db"
-    return os.environ.get("DATABASE_URL", f"sqlite:///{default.as_posix()}")
+    value = os.environ.get("DATABASE_URL", f"sqlite:///{default.as_posix()}")
+    if value.startswith("postgres://"):
+        value = value.replace("postgres://", "postgresql+psycopg://", 1)
+    elif value.startswith("postgresql://"):
+        value = value.replace("postgresql://", "postgresql+psycopg://", 1)
+    return value
 
 
 def build_engine(url: str):
@@ -27,6 +32,26 @@ def build_engine(url: str):
         if parsed.database and parsed.database != ":memory:":
             Path(parsed.database).resolve().parent.mkdir(parents=True, exist_ok=True)
         options["connect_args"] = {"check_same_thread": False, "timeout": 5}
+    elif parsed.get_backend_name() == "postgresql":
+        from app.runtime import production
+
+        if (
+            production()
+            and os.environ.get("DB_REQUIRE_TLS", "true").lower() != "false"
+            and parsed.query.get("sslmode") != "verify-full"
+        ):
+            raise RuntimeError(
+                "External production PostgreSQL requires sslmode=verify-full"
+            )
+        options.update(
+            pool_size=int(os.environ.get("DB_POOL_SIZE", "5")),
+            max_overflow=int(os.environ.get("DB_MAX_OVERFLOW", "5")),
+            pool_timeout=5,
+        )
+        options["connect_args"] = {
+            "connect_timeout": 5,
+            "options": "-c statement_timeout=10000 -c lock_timeout=3000",
+        }
     engine = create_engine(url, **options)
     if parsed.get_backend_name() == "sqlite":
 

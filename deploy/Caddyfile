@@ -1,0 +1,14 @@
+{$CAMPUS_DOMAIN} {
+    encode zstd gzip
+    header Strict-Transport-Security "max-age=31536000"
+    request_body {
+        max_size 3MB
+    }
+    @monitoring path /metrics
+    respond @monitoring 404
+    reverse_proxy app:8000 {
+        header_up Host {host}
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-For {remote_host}
+    }
+}

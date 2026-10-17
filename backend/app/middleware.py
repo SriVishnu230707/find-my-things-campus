@@ -4,6 +4,8 @@ import re
 
 from starlette.responses import JSONResponse
 
+from app.runtime import trusted_origins
+
 MAX_BODY_BYTES = 16 * 1024
 LOCAL_ORIGINS = {"http://127.0.0.1:8000", "http://localhost:8000"}
 
@@ -37,7 +39,7 @@ class RequestGuards:
         headers = dict(scope["headers"])
         if scope["method"] in {"POST", "PATCH", "PUT", "DELETE"}:
             origin = headers.get(b"origin")
-            if origin is not None and origin.decode("latin-1") not in LOCAL_ORIGINS:
+            if origin is not None and origin.decode("latin-1") not in trusted_origins():
                 await JSONResponse({"detail": "Untrusted browser origin"}, 403)(
                     scope, receive, send
                 )

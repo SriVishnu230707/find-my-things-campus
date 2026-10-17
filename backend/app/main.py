@@ -1,6 +1,7 @@
 """Application entry point: uvicorn app.main:app."""
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -12,8 +13,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.account_config import validate_account_config
+from app.auth_limits import redis_client
 from app.database import engine, verify_database
 from app.middleware import RequestGuards
+from app.observability import RequestObservability
 from app.routers.auth import router as auth_router
 from app.routers.claims import router as claims_router
 from app.routers.health import router as health_router
@@ -21,7 +24,12 @@ from app.routers.items import router as items_router
 from app.routers.media import router as media_router
 from app.routers.notifications import router as notifications_router
 from app.routers.staff import router as staff_router
+from app.runtime import allowed_hosts, validate_runtime
 from app.security import dummy_hash, signing_secret
+
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO").upper(), format="%(message)s"
+)
 
 
 @asynccontextmanager
@@ -35,6 +43,10 @@ async def lifespan(app):
             ) from None
         signing_secret()
         validate_account_config()
+        validate_runtime()
+        client = redis_client()
+        if client is not None:
+            client.ping()
         dummy_hash()
         yield
     finally:
@@ -44,11 +56,12 @@ async def lifespan(app):
 app = FastAPI(
     title="Campus Lost-and-Found API",
     description="Browse campus reports. Sign in to create reports and manage your own; staff can moderate.",
-    version="0.9.0",
+    version="0.10.0",
     lifespan=lifespan,
 )
-app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1"])
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(allowed_hosts()))
 app.add_middleware(RequestGuards)
+app.add_middleware(RequestObservability)
 app.include_router(health_router)
 app.include_router(items_router)
 app.include_router(auth_router)
