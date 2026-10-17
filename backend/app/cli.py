@@ -16,6 +16,7 @@ from app.models.claims import Claim
 from app.models.users import User
 from app.schemas.users import UserRegister, normalize_email
 from app.security import SECRET_FILE, hash_password
+from app.services.audit import audit
 from app.services.claims import lock_item
 
 
@@ -71,6 +72,7 @@ def main():
                         display_name=data.display_name,
                         password_hash=hash_password(data.password.get_secret_value()),
                         role="staff",
+                        email_verified=True,
                         created_at=now,
                         updated_at=now,
                     )
@@ -80,6 +82,13 @@ def main():
             elif args.command == "set-role":
                 user.role = args.role
                 user.updated_at = datetime.now(timezone.utc)
+                audit(
+                    session,
+                    None,
+                    "role_changed",
+                    target_user_id=user.id,
+                    details=args.role,
+                )
             else:
                 try:
                     item = lock_item(session, args.item_id)
@@ -99,6 +108,13 @@ def main():
                 item.reporter_id = user.id
                 item.reported_by = user.display_name
                 item.updated_at = datetime.now(timezone.utc)
+                audit(
+                    session,
+                    None,
+                    "owner_assigned",
+                    item_id=item.id,
+                    target_user_id=user.id,
+                )
             session.commit()
             print("Account/report administration completed.")
     except ValidationError as error:

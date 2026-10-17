@@ -8,6 +8,7 @@ from sqlalchemy import select, update
 from app.models.claims import Claim
 from app.models.items import Item
 from app.schemas.claims import ClaimRead
+from app.services.audit import audit
 from app.services.notifications import notify, reviewers
 
 
@@ -156,6 +157,7 @@ def transition(session, claim_id, user, action):
         else f"Claim #{claim.id} on report #{item_id} was {action}."
     )
     notify(session, recipients, item_id, claim.id, kind, message, user.id)
+    audit(session, user, kind, item_id=item_id, claim_id=claim.id)
     session.flush()
     result = ClaimRead.model_validate(claim)
     session.commit()

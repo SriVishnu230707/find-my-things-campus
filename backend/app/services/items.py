@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.models.items import Item
 from app.models.users import User
 from app.schemas.items import ItemCreate, ItemQuery, ItemRead, ItemUpdate
+from app.services.audit import audit
 from app.services.claims import has_claims, lock_item, moderator
 
 
@@ -98,6 +99,14 @@ class ItemRepository:
             statement = statement.where(Item.reporter_id == actor.id)
         item = self.session.scalars(statement).first()
         result = ItemRead.model_validate(item) if item else None
+        if item is not None and actor is not None and actor.role == "staff":
+            audit(
+                self.session,
+                actor,
+                "report_updated",
+                item_id=item_id,
+                details=", ".join(sorted(changes.model_fields_set)),
+            )
         self.session.commit()
         return result
 
@@ -115,6 +124,8 @@ class ItemRepository:
             statement = statement.where(Item.reporter_id == actor.id)
         result = self.session.execute(statement)
         deleted = result.scalar_one_or_none() is not None
+        if deleted and actor is not None and actor.role == "staff":
+            audit(self.session, actor, "report_deleted", item_id=item_id)
         self.session.commit()
         return deleted
 
@@ -125,8 +136,11 @@ class ItemRepository:
             raise HTTPException(
                 409, "Finish or withdraw active claims before archiving"
             )
+        was_archived = item.archived
         item.archived = True
         item.updated_at = datetime.now(timezone.utc)
+        if actor.role == "staff" and not was_archived:
+            audit(self.session, actor, "report_archived", item_id=item_id)
         result = ItemRead.model_validate(item)
         self.session.commit()
         return result

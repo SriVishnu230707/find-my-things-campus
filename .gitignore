@@ -11,3 +11,5 @@ dist/
 *.db-wal
 *.db-shm
 backend/data/auth.secret
+backend/data/mail/
+*.eml

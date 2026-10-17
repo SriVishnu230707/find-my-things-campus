@@ -37,6 +37,9 @@ class UserRead(BaseModel):
     email: str
     display_name: str
     role: Literal["student", "staff"]
+    email_verified: bool
+    campus_verified: bool
+    is_active: bool
     created_at: datetime
     updated_at: datetime
 

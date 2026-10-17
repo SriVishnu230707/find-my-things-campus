@@ -38,6 +38,13 @@ class ReportAPI(unittest.TestCase):
             "DATABASE_URL": "sqlite:///"
             + (Path(cls.directory.name) / "test.db").as_posix(),
             "AUTH_SECRET": secrets.token_urlsafe(48),
+            "REQUIRE_VERIFIED_EMAIL": str(
+                getattr(cls, "require_verification", False)
+            ).lower(),
+            "CAMPUS_EMAIL_DOMAINS": getattr(cls, "test_domains", ""),
+            "MAIL_MODE": "local",
+            "MAIL_DIRECTORY": str(Path(cls.directory.name) / "mail"),
+            "PUBLIC_BASE_URL": "http://127.0.0.1:8000",
             "PYTHONPATH": os.pathsep.join(sys.path),
         }
         subprocess.run(
@@ -154,6 +161,7 @@ class ReportAPI(unittest.TestCase):
         ) as connection:
             with connection:
                 connection.execute("DELETE FROM notifications")
+                connection.execute("DELETE FROM audit_events")
                 connection.execute("DELETE FROM item_photos")
                 connection.execute("DELETE FROM claims")
                 connection.execute("DELETE FROM items")
@@ -625,6 +633,9 @@ class ReportAPI(unittest.TestCase):
             {"sub": str(2**63)},
             {"sub": "-1"},
             {"sub": "99999999"},
+            {"ver": True},
+            {"ver": -1},
+            {"ver": "0"},
         ]:
             invalid.append(
                 jwt.encode({**payload, **changes}, secret, algorithm="HS256")

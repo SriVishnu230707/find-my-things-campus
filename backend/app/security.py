@@ -67,7 +67,7 @@ def verify_password(encoded: str, password: str) -> bool:
         hash_slots.release()
 
 
-def create_token(user_id: int) -> str:
+def create_token(user_id: int, version: int = 0) -> str:
     now = datetime.now(timezone.utc)
     return jwt.encode(
         {
@@ -76,13 +76,14 @@ def create_token(user_id: int) -> str:
             "exp": now + timedelta(seconds=TOKEN_SECONDS),
             "iss": ISSUER,
             "aud": AUDIENCE,
+            "ver": version,
         },
         signing_secret(),
         algorithm="HS256",
     )
 
 
-def decode_token(token: str) -> int:
+def decode_token(token: str) -> tuple[int, int]:
     if len(token) > 2048:
         raise jwt.InvalidTokenError("Token too long")
     payload = jwt.decode(
@@ -104,4 +105,9 @@ def decode_token(token: str) -> int:
     user_id = int(subject)
     if not 0 < user_id <= 2**63 - 1:
         raise jwt.InvalidTokenError("Invalid subject")
-    return user_id
+    version = payload.get(
+        "ver", 0
+    )  # Phase 8 tokens remain valid until account revocation.
+    if type(version) is not int or not 0 <= version <= 2**63 - 1:
+        raise jwt.InvalidTokenError("Invalid token version")
+    return user_id, version

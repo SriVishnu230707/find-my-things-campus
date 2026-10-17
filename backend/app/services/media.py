@@ -10,6 +10,7 @@ from sqlalchemy import delete
 
 from app.models.media import ItemPhoto
 from app.schemas.items import ItemRead
+from app.services.audit import audit
 from app.services.claims import lock_item, moderator
 
 MAX_UPLOAD_BYTES = 2 * 1024 * 1024
@@ -106,6 +107,13 @@ def change_photo(session, item_id, user, data=None, content_type=None):
     from datetime import datetime, timezone
 
     item.updated_at = datetime.now(timezone.utc)
+    if user.role == "staff":
+        audit(
+            session,
+            user,
+            "photo_removed" if normalized is None else "photo_updated",
+            item_id=item_id,
+        )
     result = ItemRead.model_validate(item)
     session.commit()
     return result

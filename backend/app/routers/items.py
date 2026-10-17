@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
 from sqlalchemy.orm import Session
 
-from app.auth import CurrentUser
+from app.auth import CurrentUser, VerifiedUser
 from app.database import get_session
 from app.schemas.items import ItemCreate, ItemQuery, ItemRead, ItemUpdate
 from app.services.items import ItemRepository
@@ -23,7 +23,7 @@ Store = Annotated[ItemRepository, Depends(get_store)]
 
 @router.post("", response_model=ItemRead, status_code=status.HTTP_201_CREATED)
 def create_item(
-    data: ItemCreate, store: Store, response: Response, user: CurrentUser
+    data: ItemCreate, store: Store, response: Response, user: VerifiedUser
 ) -> ItemRead:
     item = store.create(data, user)
     response.headers["Location"] = f"/items/{item.id}"
@@ -54,7 +54,7 @@ def get_item(item_id: ItemID, store: Store) -> ItemRead:
 
 @router.patch("/{item_id}", response_model=ItemRead)
 def update_item(
-    item_id: ItemID, data: ItemUpdate, store: Store, user: CurrentUser
+    item_id: ItemID, data: ItemUpdate, store: Store, user: VerifiedUser
 ) -> ItemRead:
     check_permission(item_id, store, user)
     item = store.update(item_id, data, user)
@@ -64,7 +64,7 @@ def update_item(
 
 
 @router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_item(item_id: ItemID, store: Store, user: CurrentUser) -> Response:
+def delete_item(item_id: ItemID, store: Store, user: VerifiedUser) -> Response:
     check_permission(item_id, store, user)
     if not store.delete(item_id, user):
         raise HTTPException(status_code=404, detail="Item not found")
@@ -80,5 +80,5 @@ def check_permission(item_id, store, user):
 
 
 @router.post("/{item_id}/archive", response_model=ItemRead)
-def archive_item(item_id: ItemID, store: Store, user: CurrentUser):
+def archive_item(item_id: ItemID, store: Store, user: VerifiedUser):
     return store.archive(item_id, user)

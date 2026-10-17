@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from sqlalchemy.orm import Session
 
-from app.auth import CurrentUser
+from app.auth import VerifiedUser
 from app.database import get_session
 from app.models.media import ItemPhoto
 from app.routers.items import ItemID
@@ -19,7 +19,7 @@ DB = Annotated[Session, Depends(get_session)]
 @router.put("/items/{item_id}/photo", response_model=ItemRead)
 def upload_photo(
     item_id: ItemID,
-    user: CurrentUser,
+    user: VerifiedUser,
     session: DB,
     photo: Annotated[UploadFile, File()],
 ):
@@ -48,5 +48,5 @@ def get_photo(item_id: ItemID, session: DB):
 
 
 @router.delete("/items/{item_id}/photo", response_model=ItemRead)
-def remove_photo(item_id: ItemID, user: CurrentUser, session: DB):
+def remove_photo(item_id: ItemID, user: VerifiedUser, session: DB):
     return change_photo(session, item_id, user)

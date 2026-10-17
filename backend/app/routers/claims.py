@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.auth import CurrentUser
+from app.auth import CurrentUser, VerifiedUser
 from app.database import get_session
 from app.models.claims import Claim
 from app.models.items import Item
@@ -21,7 +21,7 @@ Offset = Annotated[int, Query(ge=0, le=2**63 - 1)]
 
 
 @router.post("/items/{item_id}/claims", response_model=ClaimRead, status_code=201)
-def submit(item_id: ItemID, data: ClaimCreate, user: CurrentUser, session: DB):
+def submit(item_id: ItemID, data: ClaimCreate, user: VerifiedUser, session: DB):
     return create_claim(session, item_id, user, data.evidence)
 
 
@@ -62,7 +62,7 @@ def review(
 
 
 @router.patch("/claims/{claim_id}/decision", response_model=ClaimRead)
-def decide(claim_id: ItemID, data: ClaimDecision, user: CurrentUser, session: DB):
+def decide(claim_id: ItemID, data: ClaimDecision, user: VerifiedUser, session: DB):
     return transition(session, claim_id, user, data.decision)
 
 
@@ -72,5 +72,5 @@ def withdraw(claim_id: ItemID, user: CurrentUser, session: DB):
 
 
 @router.post("/claims/{claim_id}/handover", response_model=ClaimRead)
-def handover(claim_id: ItemID, user: CurrentUser, session: DB):
+def handover(claim_id: ItemID, user: VerifiedUser, session: DB):
     return transition(session, claim_id, user, "completed")

@@ -44,6 +44,8 @@ def verify_database(db_engine):
     """Reject stale revisions and missing report columns before serving traffic."""
     from sqlalchemy import select
 
+    from app.models.account_tokens import AccountToken
+    from app.models.audit import AuditEvent
     from app.models.claims import Claim
     from app.models.items import Item
     from app.models.media import ItemPhoto
@@ -61,6 +63,8 @@ def verify_database(db_engine):
         connection.execute(select(Claim).limit(0))
         connection.execute(select(ItemPhoto).limit(0))
         connection.execute(select(Notification).limit(0))
+        connection.execute(select(AccountToken).limit(0))
+        connection.execute(select(AuditEvent).limit(0))
 
 
 def get_session():

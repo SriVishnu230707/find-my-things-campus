@@ -3,6 +3,8 @@
 from alembic import context
 
 from app.database import Base, engine
+from app.models.account_tokens import AccountToken  # noqa: F401 -- register table metadata
+from app.models.audit import AuditEvent  # noqa: F401 -- register table metadata
 from app.models.claims import Claim  # noqa: F401 -- register table metadata
 from app.models.items import Item  # noqa: F401 -- register table metadata
 from app.models.media import ItemPhoto  # noqa: F401 -- register table metadata
